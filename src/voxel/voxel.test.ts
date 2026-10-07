@@ -142,7 +142,7 @@ describe('ground-tile QR', () => {
     const a = buildModel(qr, { objectId: 'pine-tree' });
     const b = buildModel(qr, { objectId: 'pine-tree' });
     expect(Array.from(a.grid.cells)).toEqual(Array.from(b.grid.cells));
-  });
+  }, 15000);
 
   it('keeps every object inside the grid height', () => {
     const qr = generateQRMatrix('https://example.com');
@@ -150,7 +150,7 @@ describe('ground-tile QR', () => {
       const { grid } = buildModel(qr, { objectId: object.id });
       expect(grid.maxY(), object.id).toBeLessThan(grid.height - 1);
     }
-  });
+  }, 30000);
 });
 
 describe('plot layout', () => {

@@ -1,35 +1,28 @@
-import { generateQRMatrix, MAX_QR_CHARS, QRInputError, type QRData } from '../core/qr/QRGenerator';
+import { generateQRMatrix, QRInputError, type QRData } from '../core/qr/QRGenerator';
 import { qrToSvg } from '../core/qr/qrSvg';
-import { getObject, OBJECTS, getCategories, getObjectsByCategory, getCategoryForObject, type VoxelObject } from '../objects';
+import { getObject, OBJECTS, getObjectsByCategory, type VoxelObject } from '../objects';
 import { LIGHTING, TIMES_OF_DAY, type TimeOfDay } from '../render/lighting';
 import { buildMesh } from '../render/mesher';
 import { Viewer, type ViewerState } from '../render/Viewer';
 import { buildModel } from '../voxel/buildModel';
-import { ICONS, LOGO } from './icons';
 import { IDLE_ELEVATION } from '../render/timeline';
 import { embedSnippet, embedUrl, parseCommand, parseEmbed, type EmbedEvent, type EmbedOptions, type EmbedPhoto } from './embed';
 import { embedDataToFile, photoToEmbedData, PhotoReadError, PhotoSession } from './photoSession';
-import { BlockedImageError, fetchPhotoFile, parseImageUrl, proxiedUrl } from './photoUrl';
 import { readState, writeQuery, type AppState } from './state';
 import { decodeImage } from './verify';
-import type { LookName } from '../photo/scanColors';
+
+import { TopbarComponent } from './components/Topbar';
+import { InfoDialogComponent } from './components/InfoDialog';
+import { SourceDialogComponent } from './components/SourceDialog';
+import { ScanOverlayComponent } from './components/ScanOverlay';
+import { DockComponent } from './components/Dock';
+import type { LookChoice } from './components/PhotoRow';
+import { LOOK_LABELS } from './components/PhotoRow';
 
 const DEFAULT_STATE: AppState = { text: 'https://example.com', objectId: OBJECTS[0].id, variantId: OBJECTS[0].variants[0].id, time: 'night' };
-const TIME_LABELS: Record<TimeOfDay, string> = { dawn: 'Dawn', day: 'Day', dusk: 'Dusk', night: 'Night' };
-
 type VerifyState = 'idle' | 'checking' | 'ok' | 'fail';
-type LookChoice = 'auto' | LookName;
-
-/** Id used for the uploaded-photo mode; it is not one of the built-in objects. */
 const PHOTO_ID = 'photo';
-/** Matches the short landscape layout in styles.css, where the controls become a side panel. */
 const SIDE_PANEL_QUERY = '(orientation: landscape) and (max-height: 520px)';
-const LOOK_LABELS: [LookChoice, string, string][] = [
-  ['auto', 'Auto', 'Pick the most photo-like look that still scans'],
-  ['soft', 'Photo-like', 'Keeps your photo as it is'],
-  ['firm', 'Balanced', 'A little firmer for tougher scanners'],
-  ['max', 'Easy scan', 'Strongest, easiest for any phone'],
-];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -42,7 +35,6 @@ function nextPaint(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 }
 
-/** Copy text to the clipboard, falling back to the legacy path where the async API is unavailable. */
 async function copyText(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
@@ -83,44 +75,27 @@ export class App {
   private toastTimer = 0;
 
   private readonly stage = el('div', 'stage');
-  private readonly input = el('input', 'link-input');
-  private readonly counter = el('span', 'counter');
   private readonly hint = el('p', 'hint');
-  private readonly verify = el('div', 'verify');
-  private readonly verifyText = el('span');
   private readonly loading = el('div', 'loading');
-  private readonly status = el('p', 'status');
   private readonly toast = el('div', 'toast');
-  private readonly revealButton = el('button', 'btn primary');
-  private readonly saveButton = el('button', 'btn ghost');
-  private readonly saveMenu = el('div', 'menu');
-  private readonly dock = el('section', 'dock');
-  private readonly variantRow = el('div', 'variants');
   private readonly embed: EmbedOptions | null = parseEmbed(window.location.search, window.location.hash);
   private readonly embedBar = el('div', 'embed-controls');
   private readonly embedHint = el('p', 'embed-hint', 'Drag to rotate · tap to reveal the QR');
   private readonly embedButton = el('button', 'embed-btn');
   private embedStarted = false;
   private readonly photo = new PhotoSession();
-  private readonly scanOverlay = el('div', 'scan-overlay');
-  private readonly scanImage = el('img');
-  private scanUrl: string | null = null;
   private readonly fileInput = el('input');
-  private readonly sourceDialog = el('dialog');
-  private readonly urlInput = el('input');
-  private readonly urlError = el('p');
-  private readonly photoRow = el('div', 'photo-options');
-  private readonly photoName = el('span', 'photo-name');
   private readonly dropOverlay = el('div', 'drop-overlay', 'Drop a photo to turn it into a 3D relief');
   private readonly loadingText = el('span', '', 'Building your model…');
-  private readonly lookInputs = new Map<LookChoice, HTMLInputElement>();
+
+  private readonly topbar: TopbarComponent;
+  private readonly infoDialog: InfoDialogComponent;
+  private readonly sourceDialog: SourceDialogComponent;
+  private readonly scanOverlay: ScanOverlayComponent;
+  private readonly dock: DockComponent;
+
   private look: LookChoice = 'auto';
-  /** The built-in object to restore (and to write into share links) while photo mode is active. */
   private regular = { objectId: OBJECTS[0].id, variantId: OBJECTS[0].variants[0].id };
-  private readonly categorySelect = el('select', 'picker');
-  private readonly modelSelect = el('select', 'picker');
-  private readonly photoButton = el('button', 'btn ghost small');
-  private readonly timeInputs = new Map<TimeOfDay, HTMLInputElement>();
 
   constructor(private readonly root: HTMLElement) {
     this.state = readState(window.location.search, DEFAULT_STATE);
@@ -131,6 +106,7 @@ export class App {
     } else if (!window.location.search && window.matchMedia?.('(prefers-color-scheme: light)').matches) {
       this.state.time = 'day';
     }
+
     root.classList.add('app');
     if (this.embed) {
       root.classList.add('embed');
@@ -139,191 +115,13 @@ export class App {
     }
 
     this.regular = { objectId: this.state.objectId, variantId: this.state.variantId };
-    root.append(this.buildSky(), this.stage, this.buildTopbar(), this.hint, this.buildDock(), this.loading, this.toast, this.buildInfo(), this.buildSourceDialog(), this.dropOverlay, this.buildScanOverlay(), this.buildEmbedControls());
-    this.viewer = new Viewer(this.stage, (viewerState) => this.onViewer(viewerState));
-    this.viewer.setTimeOfDay(this.state.time);
-    this.applyTime();
-    if (this.embed) this.startEmbed(this.embed);
 
-    new ResizeObserver(() => this.syncInsets()).observe(this.dock);
-    window.matchMedia?.(SIDE_PANEL_QUERY).addEventListener?.('change', () => this.syncInsets());
-    this.trackKeyboard();
-    document.addEventListener('keydown', (event) => this.onKey(event));
-    document.addEventListener('click', (event) => {
-      const target = event.target as Node;
-      if (!this.saveMenu.hidden && !this.saveMenu.contains(target) && !this.saveButton.contains(target)) this.closeMenu();
+    this.topbar = new TopbarComponent({
+      onShare: () => void this.share(),
+      onOpenInfo: () => this.infoDialog.show(),
     });
 
-    this.attachDrop();
-    this.syncInsets();
-    this.onViewer({ mode: 'object', busy: false, renderer: this.viewer.rendererKind });
-    if (this.embed?.photo) void this.loadEmbedPhoto(this.embed.photo);
-    else void this.generate();
-  }
-
-  /** Decode a photo carried in an embed link's hash, then build the model the same way an upload would. */
-  private async loadEmbedPhoto(photo: EmbedPhoto): Promise<void> {
-    try {
-      await this.photo.load(embedDataToFile(photo));
-      this.look = photo.look;
-      const lookRadio = this.lookInputs.get(photo.look);
-      if (lookRadio) lookRadio.checked = true;
-      this.enterPhotoMode();
-    } catch (error) {
-      console.error(error);
-      // A corrupt or oversized hash must not strand the embed in photo mode with no chooser:
-      // fall back to the default object so something scannable still shows.
-      this.state.objectId = OBJECTS[0].id;
-      this.state.variantId = OBJECTS[0].variants[0].id;
-      this.regular = { objectId: this.state.objectId, variantId: this.state.variantId };
-      this.photoRow.hidden = true;
-      this.variantRow.hidden = false;
-      this.categorySelect.disabled = false;
-      this.modelSelect.disabled = false;
-      this.syncObjectPickers();
-      this.renderVariants();
-      this.setVerify('fail');
-      this.setStatus('Could not load the embedded photo.', true);
-    }
-    await this.generate();
-  }
-
-  // ---------- Structure ----------
-
-  private buildSky(): HTMLElement {
-    const sky = el('div', 'sky');
-    sky.setAttribute('aria-hidden', 'true');
-    for (const time of TIMES_OF_DAY) {
-      const layer = el('div', `sky-layer ${time}`);
-      layer.dataset.time = time;
-      sky.append(layer);
-    }
-    sky.append(el('div', 'stars'), el('div', 'vignette'));
-    return sky;
-  }
-
-  private buildTopbar(): HTMLElement {
-    const bar = el('header', 'topbar');
-    const brand = el('a', 'brand');
-    brand.href = window.location.pathname;
-    brand.setAttribute('aria-label', 'Voxel QR');
-    const mark = el('span', 'brand-mark');
-    mark.innerHTML = LOGO;
-    brand.append(mark, el('span', 'brand-name', 'Voxel QR'));
-
-    this.verify.setAttribute('role', 'status');
-    this.verify.dataset.state = 'idle';
-    this.verify.append(el('span', 'dot'), this.verifyText);
-
-    const actions = el('div', 'top-actions');
-    const share = el('button', 'icon-btn');
-    share.type = 'button';
-    share.innerHTML = ICONS.share;
-    share.setAttribute('aria-label', 'Copy share link');
-    share.title = 'Copy share link';
-    share.addEventListener('click', () => void this.share());
-    const info = el('button', 'icon-btn');
-    info.type = 'button';
-    info.innerHTML = ICONS.info;
-    info.setAttribute('aria-label', 'How it works');
-    info.title = 'How it works';
-    info.addEventListener('click', () => (this.root.querySelector('dialog[aria-labelledby="info-title"]') as HTMLDialogElement).showModal());
-    actions.append(share, info);
-
-    bar.append(brand, this.verify, actions);
-    return bar;
-  }
-
-  private buildDock(): HTMLElement {
-    const dock = this.dock;
-    dock.setAttribute('aria-label', 'Controls');
-
-    // Row 1: link field, save, reveal.
-    const row1 = el('div', 'row link-row');
-    const field = el('div', 'field');
-    this.input.type = 'text';
-    this.input.value = this.state.text;
-    this.input.maxLength = MAX_QR_CHARS;
-    this.input.placeholder = 'Paste a link or text';
-    this.input.spellcheck = false;
-    this.input.autocapitalize = 'off';
-    this.input.autocomplete = 'off';
-    this.input.setAttribute('aria-label', 'Text or URL to encode');
-    this.input.addEventListener('input', () => {
-      this.state.text = this.input.value;
-      this.updateCounter();
-      window.clearTimeout(this.debounce);
-      this.debounce = window.setTimeout(() => void this.generate(), 450);
-    });
-    this.input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        window.clearTimeout(this.debounce);
-        void this.generate();
-      }
-    });
-    field.append(this.input, this.counter);
-
-    this.revealButton.type = 'button';
-    this.revealButton.addEventListener('click', () => this.viewer.toggle());
-
-    const saveWrap = el('div', 'save-wrap');
-    this.saveButton.type = 'button';
-    this.saveButton.innerHTML = `${ICONS.save}<span>Save</span>`;
-    this.saveButton.setAttribute('aria-haspopup', 'menu');
-    this.saveButton.setAttribute('aria-expanded', 'false');
-    this.saveButton.addEventListener('click', () => (this.saveMenu.hidden ? this.openMenu() : this.closeMenu()));
-    this.saveMenu.hidden = true;
-    this.saveMenu.setAttribute('role', 'menu');
-    const items: [string, string, () => void][] = [
-      ['Full-screen scan', 'Big and flat, easiest to scan', () => void this.openScanOverlay()],
-      ['Copy embed code', 'Iframe for any website', () => void this.copyEmbed()],
-      ['Scan image', 'PNG, flat QR', () => void this.save('scan')],
-      ['Model image', 'PNG, 3D view', () => void this.save('object')],
-      ['Print-ready SVG', 'Black and white vector', () => this.saveSvg()],
-    ];
-    for (const [title, detail, action] of items) {
-      const item = el('button', 'menu-item');
-      item.type = 'button';
-      item.setAttribute('role', 'menuitem');
-      item.append(el('span', 'menu-title', title), el('span', 'menu-detail', detail));
-      item.addEventListener('click', () => {
-        this.closeMenu();
-        action();
-      });
-      this.saveMenu.append(item);
-    }
-    saveWrap.append(this.saveButton, this.saveMenu);
-    row1.append(field, saveWrap, this.revealButton);
-
-    // Row 2: category, model, photo, color, time of day.
-    const row2 = el('div', 'row options-row');
-    const pickers = el('div', 'pickers');
-    const categoryLabel = el('label', 'picker-label', 'Category');
-    this.categorySelect.setAttribute('aria-label', 'Category');
-    for (const category of getCategories()) {
-      const option = document.createElement('option');
-      option.value = category.id;
-      option.textContent = category.name;
-      this.categorySelect.append(option);
-    }
-    this.categorySelect.addEventListener('change', () => this.chooseCategory(this.categorySelect.value));
-    categoryLabel.append(this.categorySelect);
-    const modelLabel = el('label', 'picker-label', 'Design');
-    this.modelSelect.setAttribute('aria-label', 'Design');
-    this.modelSelect.addEventListener('change', () => {
-      const object = getObject(this.modelSelect.value);
-      this.chooseObject(object);
-    });
-    modelLabel.append(this.modelSelect);
-    pickers.append(categoryLabel, modelLabel);
-
-    this.photoButton.type = 'button';
-    this.photoButton.innerHTML = `${ICONS.photo}<span>Your photo</span>`;
-    this.photoButton.setAttribute('aria-label', 'Use your own photo');
-    this.photoButton.title = 'Use your own photo';
-    this.photoButton.addEventListener('click', () => this.choosePhoto());
-    pickers.append(this.photoButton);
-    this.syncObjectPickers();
+    this.infoDialog = new InfoDialogComponent();
 
     this.fileInput.type = 'file';
     this.fileInput.accept = 'image/*';
@@ -335,198 +133,127 @@ export class App {
       if (file) void this.loadPhoto(file);
     });
     this.fileInput.addEventListener('cancel', () => this.restoreObjectSelect());
-    this.buildPhotoRow();
 
-    this.variantRow.setAttribute('role', 'radiogroup');
-    this.variantRow.setAttribute('aria-label', 'Color');
-    this.renderVariants();
+    this.sourceDialog = new SourceDialogComponent({
+      onFileSelect: () => this.fileInput.click(),
+      onPhotoLoaded: (file) => this.loadPhoto(file),
+      onDismiss: () => this.restoreObjectSelect(),
+    });
 
-    const times = el('div', 'segmented');
-    times.setAttribute('role', 'radiogroup');
-    times.setAttribute('aria-label', 'Time of day');
-    for (const time of TIMES_OF_DAY) {
-      const label = el('label', 'segment');
-      label.title = TIME_LABELS[time];
-      const radio = el('input', 'sr-only');
-      radio.type = 'radio';
-      radio.name = 'time';
-      radio.value = time;
-      radio.checked = time === this.state.time;
-      radio.addEventListener('change', () => this.chooseTime(time));
-      this.timeInputs.set(time, radio);
-      const icon = el('span', 'segment-icon');
-      icon.innerHTML = ICONS[time];
-      label.append(radio, icon, el('span', 'segment-text', TIME_LABELS[time]));
-      times.append(label);
-    }
-    row2.append(pickers, this.variantRow, this.photoRow, times, this.fileInput);
+    this.scanOverlay = new ScanOverlayComponent();
 
-    this.status.setAttribute('role', 'status');
-    this.status.setAttribute('aria-live', 'polite');
-    dock.append(row1, row2, this.status);
+    this.dock = new DockComponent({
+      initialText: this.state.text,
+      initialTime: this.state.time,
+      initialObjectId: this.state.objectId,
+      initialVariantId: this.state.variantId,
+      saveItems: [
+        { title: 'Full-screen scan', detail: 'Big and flat, easiest to scan', action: () => void this.openScanOverlay() },
+        { title: 'Copy embed code', detail: 'Iframe for any website', action: () => void this.copyEmbed() },
+        { title: 'Scan image', detail: 'PNG, flat QR', action: () => void this.save('scan') },
+        { title: 'Model image', detail: 'PNG, 3D view', action: () => void this.save('object') },
+        { title: 'Print-ready SVG', detail: 'Black and white vector', action: () => this.saveSvg() },
+      ],
+      onTextInput: (text) => {
+        this.state.text = text;
+        window.clearTimeout(this.debounce);
+        this.debounce = window.setTimeout(() => void this.generate(), 450);
+      },
+      onEnterKey: () => {
+        window.clearTimeout(this.debounce);
+        void this.generate();
+      },
+      onRevealToggle: () => this.viewer.toggle(),
+      onObjectChange: (objectId, variantId) => {
+        this.leavePhotoMode();
+        this.state.objectId = objectId;
+        this.state.variantId = variantId;
+        this.regular = { objectId, variantId };
+        void this.generate();
+      },
+      onVariantChange: (variantId) => {
+        this.state.variantId = variantId;
+        this.regular.variantId = variantId;
+        void this.generate();
+      },
+      onChoosePhoto: () => this.choosePhoto(),
+      onTimeChange: (time) => this.chooseTime(time),
+      onLookChange: (look) => {
+        this.look = look;
+        if (this.state.objectId === PHOTO_ID) void this.generate();
+      },
+    });
 
     this.loading.setAttribute('role', 'status');
     this.loading.append(el('span', 'spinner'), this.loadingText);
     this.loading.hidden = true;
-    this.updateCounter();
-    return dock;
+
+    root.append(
+      this.buildSky(),
+      this.stage,
+      this.topbar.element,
+      this.hint,
+      this.dock.element,
+      this.loading,
+      this.toast,
+      this.infoDialog.element,
+      this.sourceDialog.element,
+      this.dropOverlay,
+      this.scanOverlay.element,
+      this.buildEmbedControls()
+    );
+
+    this.viewer = new Viewer(this.stage, (viewerState) => this.onViewer(viewerState));
+    this.viewer.setTimeOfDay(this.state.time);
+    this.applyTime();
+    if (this.embed) this.startEmbed(this.embed);
+
+    new ResizeObserver(() => this.syncInsets()).observe(this.dock.element);
+    window.matchMedia?.(SIDE_PANEL_QUERY).addEventListener?.('change', () => this.syncInsets());
+    this.trackKeyboard();
+    document.addEventListener('keydown', (event) => this.onKey(event));
+    document.addEventListener('click', (event) => {
+      const target = event.target as Node;
+      if (this.dock.saveMenu.isOpen() && !this.dock.saveMenu.menu.contains(target) && !this.dock.saveMenu.button.contains(target)) {
+        this.dock.saveMenu.close();
+      }
+    });
+
+    this.attachDrop();
+    this.syncInsets();
+    this.onViewer({ mode: 'object', busy: false, renderer: this.viewer.rendererKind });
+    if (this.embed?.photo) void this.loadEmbedPhoto(this.embed.photo);
+    else void this.generate();
   }
 
-  private buildInfo(): HTMLElement {
-    const dialog = el('dialog', 'info');
-    dialog.setAttribute('aria-labelledby', 'info-title');
-    const head = el('div', 'info-head');
-    const title = el('h2', '', 'How Voxel QR works');
-    title.id = 'info-title';
-    const close = el('button', 'icon-btn');
-    close.type = 'button';
-    close.innerHTML = ICONS.close;
-    close.setAttribute('aria-label', 'Close');
-    close.addEventListener('click', () => dialog.close());
-    head.append(title, close);
-
-    const steps = el('ol', 'info-steps');
-    const copy: [string, string][] = [
-      ['Paste a link', `Anything up to ${MAX_QR_CHARS} characters. The code uses the highest error correction.`],
-      ['Meet your model', 'Pick a category and design, color and time of day. The code is laid into the ground tiles and grows through the model\'s surfaces.'],
-      ['Tap to reveal', 'The camera lifts overhead, the lighting flattens and the model\'s own colors resolve into the code. Scan it straight off the screen.'],
-      ['Or use your own photo', 'Choose Your photo, then upload one, paste a public image link, or drop an image anywhere. It becomes an embossed 3D relief whose colors resolve into a scannable code, tuned automatically so it still reads.'],
-      ['Check and share', 'We decode the rendered image in your browser and show a verified badge. Save a PNG or a print-ready SVG, or copy a share link.'],
-    ];
-    for (const [heading, body] of copy) {
-      const item = el('li');
-      item.append(el('strong', '', heading), el('span', '', body));
-      steps.append(item);
+  private async loadEmbedPhoto(photo: EmbedPhoto): Promise<void> {
+    try {
+      await this.photo.load(embedDataToFile(photo));
+      this.look = photo.look;
+      this.dock.photoRow.setLook(photo.look);
+      this.enterPhotoMode();
+    } catch (error) {
+      console.error(error);
+      this.state.objectId = OBJECTS[0].id;
+      this.state.variantId = OBJECTS[0].variants[0].id;
+      this.regular = { objectId: this.state.objectId, variantId: this.state.variantId };
+      this.dock.leavePhotoMode(this.regular.objectId, this.regular.variantId);
+      this.setVerify('fail');
+      this.setStatus('Could not load the embedded photo.', true);
     }
-    const privacy = el('p', 'info-note', 'Everything runs in your browser. Your text and photos are never uploaded, and there is no account or tracking. (An image link is fetched by your browser straight from its own site; if that site blocks it, the link is retried through the images.weserv.nl proxy.) For the easiest scan, open Save → Full-screen scan. The first photo downloads a small depth model (about 27 MB) once and keeps it in your browser.');
-    const keys = el('p', 'info-note', 'Shortcuts: Space or R reveals, T changes the time of day, arrow keys rotate.');
-    dialog.append(head, steps, privacy, keys);
-    dialog.addEventListener('click', (event) => {
-      if (event.target === dialog) dialog.close();
-    });
-    return dialog;
+    await this.generate();
   }
 
-  // ---------- Photo mode ----------
-
-  private buildPhotoRow(): void {
-    this.photoRow.hidden = true;
-    const change = el('button', 'btn ghost small');
-    change.type = 'button';
-    change.innerHTML = `${ICONS.upload}<span>Change photo</span>`;
-    change.addEventListener('click', () => this.openSourceDialog());
-
-    const looks = el('div', 'segmented');
-    looks.setAttribute('role', 'radiogroup');
-    looks.setAttribute('aria-label', 'Scan strength');
-    for (const [value, text, description] of LOOK_LABELS) {
-      const label = el('label', 'segment');
-      label.title = description;
-      const radio = el('input', 'sr-only');
-      radio.type = 'radio';
-      radio.name = 'look';
-      radio.value = value;
-      radio.checked = value === this.look;
-      radio.addEventListener('change', () => {
-        this.look = value;
-        if (this.state.objectId === PHOTO_ID) void this.generate();
-      });
-      this.lookInputs.set(value, radio);
-      label.append(radio, el('span', 'look-text', text));
-      looks.append(label);
+  private buildSky(): HTMLElement {
+    const sky = el('div', 'sky');
+    sky.setAttribute('aria-hidden', 'true');
+    for (const time of TIMES_OF_DAY) {
+      const layer = el('div', `sky-layer ${time}`);
+      layer.dataset.time = time;
+      sky.append(layer);
     }
-    this.photoRow.append(change, this.photoName, looks);
-  }
-
-  /** Where a photo comes from: this device, or a public link to an image. */
-  private buildSourceDialog(): HTMLElement {
-    const dialog = this.sourceDialog;
-    dialog.className = 'info source-dialog';
-    dialog.setAttribute('aria-labelledby', 'source-title');
-    let chosen = false;
-
-    const head = el('div', 'info-head');
-    const title = el('h2', '', 'Choose a photo');
-    title.id = 'source-title';
-    const close = el('button', 'icon-btn');
-    close.type = 'button';
-    close.innerHTML = ICONS.close;
-    close.setAttribute('aria-label', 'Close');
-    close.addEventListener('click', () => dialog.close());
-    head.append(title, close);
-
-    const upload = el('button', 'btn ghost source-upload');
-    upload.type = 'button';
-    upload.innerHTML = `${ICONS.upload}<span>Upload from this device</span>`;
-    upload.addEventListener('click', () => {
-      chosen = true;
-      dialog.close();
-      this.fileInput.click();
-    });
-
-    const form = el('form', 'source-form');
-    const label = el('label', 'source-label', 'Or use a public image link');
-    this.urlInput.type = 'url';
-    this.urlInput.inputMode = 'url';
-    this.urlInput.placeholder = 'https://example.com/picture.jpg';
-    this.urlInput.autocomplete = 'off';
-    this.urlInput.spellcheck = false;
-    this.urlInput.autocapitalize = 'off';
-    this.urlInput.className = 'link-input source-input';
-    label.append(this.urlInput);
-    const load = el('button', 'btn primary');
-    load.type = 'submit';
-    load.textContent = 'Load image';
-    this.urlError.className = 'source-error';
-    this.urlError.setAttribute('role', 'alert');
-    form.append(label, load);
-    // Download the picture and hand it to the photo pipeline. If the site refuses a cross-site read, retry through the proxy.
-    form.addEventListener('submit', (event) => {
-      event.preventDefault();
-      void (async () => {
-        this.urlError.textContent = '';
-        load.disabled = true;
-        load.textContent = 'Loading…';
-        try {
-          const original = parseImageUrl(this.urlInput.value);
-          let file: File;
-          try {
-            file = await fetchPhotoFile(original);
-          } catch (error) {
-            if (!(error instanceof BlockedImageError)) throw error;
-            try {
-              file = await fetchPhotoFile(proxiedUrl(original), fetch, original);
-            } catch {
-              throw new PhotoReadError('Could not load that image. Check that the link is public and points straight to a picture.');
-            }
-          }
-          chosen = true;
-          dialog.close();
-          void this.loadPhoto(file);
-        } catch (error) {
-          this.urlError.textContent = error instanceof PhotoReadError ? error.message : 'Could not load that image.';
-        } finally {
-          load.disabled = false;
-          load.textContent = 'Load image';
-        }
-      })();
-    });
-
-    const note = el('p', 'info-note', 'Your browser fetches the image straight from its site. If that site does not allow it, the link is retried through the images.weserv.nl proxy, which then sees the link. Nothing goes through our servers.');
-    dialog.append(head, upload, form, this.urlError, note);
-    dialog.addEventListener('click', (event) => {
-      if (event.target === dialog) dialog.close();
-    });
-    dialog.addEventListener('close', () => {
-      if (!chosen) this.restoreObjectSelect();
-      chosen = false;
-    });
-    return dialog;
-  }
-
-  private openSourceDialog(): void {
-    this.urlError.textContent = '';
-    this.sourceDialog.showModal();
+    sky.append(el('div', 'stars'), el('div', 'vignette'));
+    return sky;
   }
 
   private attachDrop(): void {
@@ -567,29 +294,11 @@ export class App {
       void this.generate();
       return;
     }
-    this.openSourceDialog();
+    this.sourceDialog.show();
   }
 
-  /** The user dismissed the file dialog: put the selection back on the object that is showing. */
   private restoreObjectSelect(): void {
-    this.syncObjectPickers();
-  }
-
-  /** Rebuild the design dropdown for a category and keep the selection valid. */
-  private syncObjectPickers(): void {
-    const currentId = this.state.objectId === PHOTO_ID ? this.regular.objectId : this.state.objectId;
-    const current = getObject(currentId);
-    if (!this.categorySelect.options.length) return;
-    this.categorySelect.value = current.category;
-    const models = getObjectsByCategory(current.category);
-    this.modelSelect.replaceChildren();
-    for (const object of models) {
-      const option = document.createElement('option');
-      option.value = object.id;
-      option.textContent = object.name;
-      this.modelSelect.append(option);
-    }
-    this.modelSelect.value = current.id;
+    this.dock.syncPickers();
   }
 
   private async loadPhoto(file: File): Promise<void> {
@@ -607,27 +316,20 @@ export class App {
       this.restoreObjectSelect();
       return;
     }
-    this.photoName.textContent = file.name;
-    this.photoName.title = file.name;
+    this.dock.photoRow.setPhotoName(file.name);
     this.enterPhotoMode();
     await this.generate();
   }
 
   private enterPhotoMode(): void {
     this.state.objectId = PHOTO_ID;
-    this.categorySelect.disabled = true;
-    this.modelSelect.disabled = true;
-    this.variantRow.hidden = true;
-    this.photoRow.hidden = false;
+    this.dock.enterPhotoMode();
     this.viewer.setRestingView(0.95, 0.12);
   }
 
   private leavePhotoMode(): void {
     if (this.state.objectId !== PHOTO_ID) return;
-    this.photoRow.hidden = true;
-    this.variantRow.hidden = false;
-    this.categorySelect.disabled = false;
-    this.modelSelect.disabled = false;
+    this.dock.leavePhotoMode(this.regular.objectId, this.regular.variantId);
     this.viewer.setRestingView(IDLE_ELEVATION, Math.PI / 4);
   }
 
@@ -636,7 +338,6 @@ export class App {
     this.loading.hidden = false;
   }
 
-  /** Photo codes are built from a different pipeline; give SVG export the matrix in the shape it expects. */
   private photoQrData(code: { qr: { matrix: Uint8Array }; modules: number; version: number; text: string }): QRData {
     const matrix: boolean[][] = [];
     for (let r = 0; r < code.modules; r++) {
@@ -681,7 +382,6 @@ export class App {
         if (ticket !== this.generation) return;
       }
 
-      // Build, then check the real rendered scan view; if a phone-like decoder cannot read it, firm it up.
       let verified = false;
       let used = pipeline.LOOK_ORDER[start];
       for (let i = start; i < pipeline.LOOK_ORDER.length; i++) {
@@ -716,54 +416,12 @@ export class App {
     }
   }
 
-  // ---------- State changes ----------
-
-  private chooseObject(object: VoxelObject): void {
-    this.leavePhotoMode();
-    this.state.objectId = object.id;
-    this.state.variantId = object.variants[0].id;
-    this.regular = { objectId: object.id, variantId: object.variants[0].id };
-    this.syncObjectPickers();
-    this.renderVariants();
-    void this.generate();
-  }
-
-  private chooseCategory(categoryId: string): void {
-    const models = getObjectsByCategory(categoryId);
-    if (!models.length) return;
-    const fallback = models.find((m) => m.id === this.state.objectId) ?? models[0];
-    this.chooseObject(fallback);
-  }
-
   private chooseTime(time: TimeOfDay): void {
     this.state.time = time;
     this.viewer.setTimeOfDay(time);
+    this.dock.setTime(time);
     this.applyTime();
     this.syncUrl();
-  }
-
-  private renderVariants(): void {
-    const object = getObject(this.state.objectId);
-    this.variantRow.replaceChildren();
-    for (const variant of object.variants) {
-      const label = el('label', 'swatch');
-      label.title = variant.name;
-      const radio = el('input', 'sr-only');
-      radio.type = 'radio';
-      radio.name = 'variant';
-      radio.value = variant.id;
-      radio.checked = variant.id === this.state.variantId;
-      radio.setAttribute('aria-label', variant.name);
-      radio.addEventListener('change', () => {
-        this.state.variantId = variant.id;
-        this.regular.variantId = variant.id;
-        void this.generate();
-      });
-      const dot = el('span', 'swatch-dot');
-      dot.style.background = variant.color;
-      label.append(radio, dot);
-      this.variantRow.append(label);
-    }
   }
 
   private applyTime(): void {
@@ -773,26 +431,24 @@ export class App {
     for (const layer of this.root.querySelectorAll<HTMLElement>('.sky-layer')) layer.classList.toggle('active', layer.dataset.time === time);
     const themeColor = document.querySelector('meta[name="theme-color"]');
     themeColor?.setAttribute('content', LIGHTING[time].tone === 'dark' ? '#0b0f18' : '#e9eff7');
-    const radio = this.timeInputs.get(time);
-    if (radio) radio.checked = true;
+    this.dock.setTime(time);
   }
 
   private onViewer(state: ViewerState): void {
     const scanning = state.mode === 'scan';
-    this.revealButton.innerHTML = `${scanning ? ICONS.cube : ICONS.reveal}<span>${scanning ? 'Show model' : 'Reveal QR'}</span>`;
-    this.revealButton.setAttribute('aria-pressed', String(scanning));
+    this.dock.revealButton.innerHTML = `<span>${scanning ? 'Show model' : 'Reveal QR'}</span>`;
+    this.dock.revealButton.setAttribute('aria-pressed', String(scanning));
     this.hint.textContent = state.renderer === 'canvas' && !scanning
       ? 'Compatibility mode · tap the model to reveal the QR'
       : scanning ? (this.state.objectId === PHOTO_ID ? 'Easiest to scan: Save → Full-screen scan · tap to bring the model back' : 'Scan with your phone camera · tap to bring the model back') : 'Drag to rotate · tap the model to reveal the QR';
     this.root.dataset.mode = state.mode;
     if (this.embed) {
-      this.embedButton.innerHTML = this.revealButton.innerHTML;
+      this.embedButton.innerHTML = this.dock.revealButton.innerHTML;
       if (scanning) this.embedHint.classList.add('hidden');
       this.postEmbed('state', state.mode, state.busy);
     }
   }
 
-  /** Keep the app inside the visible area while a phone keyboard is open, and tuck the options away on short screens. */
   private trackKeyboard(): void {
     const viewport = window.visualViewport;
     if (viewport) {
@@ -805,48 +461,40 @@ export class App {
       viewport.addEventListener('resize', fit);
       viewport.addEventListener('scroll', fit);
     }
-    this.input.addEventListener('focus', () => this.root.classList.add('typing'));
-    this.input.addEventListener('blur', () => this.root.classList.remove('typing'));
+    this.dock.input.addEventListener('focus', () => this.root.classList.add('typing'));
+    this.dock.input.addEventListener('blur', () => this.root.classList.remove('typing'));
   }
 
   private syncInsets(): void {
-    const dockHeight = this.dock.offsetHeight;
+    const dockHeight = this.dock.element.offsetHeight;
     const compact = window.innerWidth < 640;
     if (this.embed) {
-      // Leave room for the button (and the hint above it) so the model never sits under them.
       const bottom = (this.embed.controls ? 58 : 0) + (this.embed.hint ? 38 : 0);
       this.viewer?.setInsets({ top: 0, bottom });
       return;
     }
     if (window.matchMedia?.(SIDE_PANEL_QUERY).matches) {
-      // The controls sit in a side panel and the stage is narrower, so only the top bar and hint take vertical room.
       this.viewer?.setInsets({ top: 56, bottom: 56 });
       this.root.style.setProperty('--dock-height', '0px');
       return;
     }
-    // The hint wraps to two lines on the narrowest phones, so it needs more room above the dock there.
     const hintRoom = window.innerWidth < 400 ? 84 : compact ? 64 : 76;
     this.viewer?.setInsets({ top: compact ? 64 : 72, bottom: dockHeight + hintRoom });
     this.root.style.setProperty('--dock-height', `${dockHeight}px`);
   }
 
-  private updateCounter(): void {
-    this.counter.textContent = `${this.input.value.length}/${MAX_QR_CHARS}`;
-  }
-
   private setVerify(state: VerifyState): void {
-    this.verify.dataset.state = state;
-    this.verifyText.textContent = {
+    const text = {
       idle: '',
       checking: 'Checking scan…',
       ok: 'Verified scannable',
       fail: 'Could not verify this scan',
     }[state];
+    this.topbar.setVerifyState(state, text);
   }
 
   private setStatus(message: string, isError = false): void {
-    this.status.textContent = message;
-    this.status.classList.toggle('error', isError);
+    this.dock.setStatus(message, isError);
   }
 
   private syncUrl(): void {
@@ -858,8 +506,6 @@ export class App {
       /* history unavailable in some embeds */
     }
   }
-
-  // ---------- Generate, verify, export ----------
 
   private async generate(): Promise<void> {
     window.clearTimeout(this.debounce);
@@ -894,7 +540,6 @@ export class App {
       this.qr = qr;
       this.viewer.setMesh(mesh);
       if (this.embed) {
-        // Embeds skip the scan check and the URL rewrite: they only show the model.
         if (this.embed.view === 'scan' && !this.embedStarted) this.viewer.setMode('scan');
         this.embedStarted = true;
         return;
@@ -927,36 +572,15 @@ export class App {
     }
   }
 
-  private buildScanOverlay(): HTMLElement {
-    this.scanOverlay.hidden = true;
-    this.scanOverlay.setAttribute('role', 'dialog');
-    this.scanOverlay.setAttribute('aria-label', 'Full-screen scan');
-    this.scanImage.alt = 'QR code to scan';
-    const caption = el('p', 'scan-caption', 'Point your phone camera at the code. Tap anywhere or press Esc to close.');
-    this.scanOverlay.append(this.scanImage, caption);
-    this.scanOverlay.addEventListener('click', () => this.closeScanOverlay());
-    return this.scanOverlay;
-  }
-
-  /** Show the flat code as large as the screen allows: bigger modules are what phones read most reliably. */
   private async openScanOverlay(): Promise<void> {
     try {
       const blob = await this.viewer.exportImage('scan');
-      if (this.scanUrl) URL.revokeObjectURL(this.scanUrl);
-      this.scanUrl = URL.createObjectURL(blob);
-      this.scanImage.src = this.scanUrl;
-      this.scanOverlay.hidden = false;
+      this.scanOverlay.show(blob);
     } catch (error) {
       console.error(error);
       this.showToast('Could not open the scan view');
     }
   }
-
-  private closeScanOverlay(): void {
-    this.scanOverlay.hidden = true;
-  }
-
-  // ---------- Embedding ----------
 
   private buildEmbedControls(): HTMLElement {
     this.embedBar.hidden = !this.embed;
@@ -982,7 +606,6 @@ export class App {
     this.postEmbed('ready', 'object', false);
   }
 
-  /** Tell the page that contains the iframe what the viewer is doing. */
   private postEmbed(type: EmbedEvent['type'], mode: EmbedEvent['mode'], busy: boolean): void {
     if (!this.embed || window.parent === window) return;
     const message: EmbedEvent = { source: 'voxel-qr', type, mode, busy };
@@ -1035,20 +658,10 @@ export class App {
     this.toastTimer = window.setTimeout(() => this.toast.classList.remove('show'), 2200);
   }
 
-  private openMenu(): void {
-    this.saveMenu.hidden = false;
-    this.saveButton.setAttribute('aria-expanded', 'true');
-  }
-
-  private closeMenu(): void {
-    this.saveMenu.hidden = true;
-    this.saveButton.setAttribute('aria-expanded', 'false');
-  }
-
   private onKey(event: KeyboardEvent): void {
     if (event.key === 'Escape') {
-      this.closeMenu();
-      this.closeScanOverlay();
+      this.dock.saveMenu.close();
+      this.scanOverlay.close();
       return;
     }
     const target = event.target as HTMLElement;

@@ -3,3 +3,7 @@ dist/
 *.log
 src/**/*.js
 src/graphify-out/
+plans/
+.DS_Store
+
+prompt.txt

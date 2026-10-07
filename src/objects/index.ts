@@ -1,21 +1,18 @@
-import { officeTower, briefcase, moneyBag, shopCart, growthChart } from './business';
-import { car } from './car';
+import { officeTower, briefcase, moneyBag, shopCart, growthChart } from './models/business';
 import { CATEGORIES } from './categories';
-import { cherryTree } from './cherry-tree';
-import { gradCap, bookStack, school, pencil, blackboard } from './education';
-import { coffeeCup, restaurant, burger, cake } from './food';
-import { firstAid, hospital, ambulance, syringe, heart } from './medical';
-import { flower } from './nature-extra';
-import { pineTree } from './pine-tree';
-import { football, dumbbell, trophy, tennis, cricket } from './sports';
-import { computer, laptop, serverRack, smartphone, robot } from './tech';
-import { bicycle, airplane, truck } from './vehicles-extra';
+import { gradCap, bookStack, school } from './models/education';
+import { coffeeCup, restaurant, burger, cake } from './models/food';
+import { firstAid, hospital, ambulance, syringe, heart } from './models/medical';
+import { cherryTree, pineTree, flower } from './models/nature';
+import { football, dumbbell, trophy, tennis, cricket } from './models/sports';
+import { computer, laptop, serverRack, smartphone, robot } from './models/tech';
+import { car, bicycle, airplane, truck } from './models/vehicles';
 import type { VoxelObject } from './types';
 
 export const OBJECTS: VoxelObject[] = [
   computer, laptop, serverRack, smartphone, robot,
   firstAid, hospital, ambulance, syringe, heart,
-  gradCap, bookStack, school, pencil, blackboard,
+  gradCap, bookStack, school,
   cherryTree, pineTree, flower,
   car, bicycle, airplane, truck,
   officeTower, briefcase, moneyBag, shopCart, growthChart,

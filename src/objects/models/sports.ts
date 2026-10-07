@@ -1,7 +1,7 @@
-import { hash3 } from '../voxel/noise';
-import { fillBox, fillCapsule, fillCylinderY, fillLathe, fillRoundedBox, type Chooser } from '../voxel/shapes';
-import { materialPalette, solid } from './kit';
-import type { ObjectVariant, VoxelObject } from './types';
+import { hash3 } from '../../voxel/noise';
+import { fillBox, fillCapsule, fillCylinderY, fillLathe, fillRoundedBox, type Chooser } from '../../voxel/shapes';
+import { materialPalette, solid } from '../helpers/kit';
+import type { ObjectVariant, VoxelObject } from '../types';
 
 type Grid = Parameters<VoxelObject['build']>[0];
 type V3 = [number, number, number];
@@ -541,3 +541,4 @@ export const cricket: VoxelObject = {
     fillPatternedSphere(grid, c + 13 * u, top + R, c + 15 * u, R, (d) => (Math.abs(dot(d, seamN)) < 0.16 ? STITCH() : BALL()));
   },
 };
+

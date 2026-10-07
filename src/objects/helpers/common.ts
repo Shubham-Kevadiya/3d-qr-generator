@@ -1,12 +1,11 @@
-import type { GroundFamilies } from '../voxel/ground';
-import type { VoxelGrid } from '../voxel/grid';
-import { inRim, isFinderAt } from '../voxel/layout';
-import { hash3 } from '../voxel/noise';
-import { Palette } from '../voxel/palette';
-import { fillEllipsoid } from '../voxel/shapes';
-import type { ObjectContext, PaletteSet } from './types';
+import type { GroundFamilies } from '../../voxel/ground';
+import type { VoxelGrid } from '../../voxel/grid';
+import { inRim, isFinderAt } from '../../voxel/layout';
+import { hash3 } from '../../voxel/noise';
+import { Palette } from '../../voxel/palette';
+import { fillEllipsoid } from '../../voxel/shapes';
+import type { ObjectContext, PaletteSet } from '../types';
 
-/** Colors every object shares for the plot underneath. */
 export interface GroundTheme {
   tileA: [string, string, string];
   tileB: [string, string, string];
@@ -14,10 +13,7 @@ export interface GroundTheme {
   stone?: [string, string, string];
 }
 
-/** Register the plot families on a palette and return their ids. */
 export function addGroundFamilies(palette: Palette, theme: GroundTheme): GroundFamilies {
-  // Stone dark must stay near tile-dark luminance (~45): plinths and rims are wide flat
-  // tops, and a pale "dark" module (old #6a665f ≈ 102) corrupts the code beyond ECC.
   const stone = theme.stone ?? ['#33302c', '#a39d92', '#d9d3c7'];
   return {
     tileA: palette.addFamily('tileA', ...theme.tileA),
@@ -33,23 +29,18 @@ export function paletteSet(palette: Palette, ground: GroundFamilies): PaletteSet
   return { palette, ground };
 }
 
-/** Free surface column at the plot level, away from the rim. */
 function isFree(grid: VoxelGrid, ctx: ObjectContext, x: number, z: number): boolean {
   return !inRim(ctx.layout, x, z) && grid.get(x, ctx.g, z) === 0;
 }
 
 export interface GrassOptions {
   family: number;
-  /** Probability per column away from the finder squares. */
   density: number;
-  /** Extra probability inside the finder squares. */
   finderBoost: number;
-  /** Tallest blade in voxels. */
   maxHeight: number;
   seed: number;
 }
 
-/** Thin blades of grass, 1 voxel wide, leaning slightly. They count as part of the object. */
 export function addGrass(grid: VoxelGrid, palette: Palette, ctx: ObjectContext, opts: GrassOptions): void {
   const { size } = ctx.layout;
   for (let z = 0; z < size; z++) {
@@ -69,7 +60,6 @@ export function addGrass(grid: VoxelGrid, palette: Palette, ctx: ObjectContext, 
   }
 }
 
-/** Scatter single-voxel flakes (petals, needles) on the free surface, denser near (cx, cz). */
 export function scatterFlakes(
   grid: VoxelGrid, palette: Palette, ctx: ObjectContext,
   family: number, chance: number, cx: number, cz: number, radius: number, seed: number,
@@ -85,7 +75,6 @@ export function scatterFlakes(
   }
 }
 
-/** Small boulders near the plot edge, kept off the finder squares so the corners stay readable. */
 export function addStones(grid: VoxelGrid, palette: Palette, ctx: ObjectContext, family: number, rng: () => number, count: number): void {
   const { size } = ctx.layout;
   const c = size / 2;
@@ -102,3 +91,4 @@ export function addStones(grid: VoxelGrid, palette: Palette, ctx: ObjectContext,
     placed++;
   }
 }
+

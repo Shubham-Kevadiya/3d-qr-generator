@@ -1,11 +1,10 @@
-import type { VoxelGrid } from '../voxel/grid';
-import { hash3 } from '../voxel/noise';
-import type { Palette } from '../voxel/palette';
-import { fillBox, fillCapsule, fillCylinderX, fillCylinderY, fillCylinderZ, fillEllipsoid, fillLathe, fillRoundedBox } from '../voxel/shapes';
-import { materialPalette, solid } from './kit';
-import type { VoxelObject } from './types';
+import type { VoxelGrid } from '../../voxel/grid';
+import { hash3 } from '../../voxel/noise';
+import type { Palette } from '../../voxel/palette';
+import { fillBox, fillCapsule, fillCylinderX, fillCylinderY, fillCylinderZ, fillEllipsoid, fillLathe, fillRoundedBox } from '../../voxel/shapes';
+import { materialPalette, solid } from '../helpers/kit';
+import type { VoxelObject } from '../types';
 
-/** Fill a bounding box voxel by voxel; `classify` gets the voxel center and returns a material or 0. */
 function sculpt(
   grid: VoxelGrid,
   x0: number, y0: number, z0: number,
@@ -15,12 +14,13 @@ function sculpt(
   fillBox(grid, x0, y0, z0, x1, y1, z1, (x, y, z) => classify(x + 0.5, y + 0.5, z + 0.5));
 }
 
-/** Material ids by name, drawn with their natural tone. */
 function mids<K extends string>(palette: Palette, names: readonly K[]): Record<K, number> {
   const out = {} as Record<K, number>;
   for (const name of names) out[name] = palette.tone(palette.id(name), 'mid');
   return out;
 }
+
+/* ==================== FIRST AID KIT ==================== */
 
 const KIT_COLORS: Record<string, { shell: string; cross: string }> = {
   white: { shell: '#eef0ee', cross: '#d0202c' },
@@ -47,42 +47,34 @@ export const firstAid: VoxelObject = {
   build(grid, palette, { layout, u, g }) {
     const c = layout.size / 2;
     const m = mids(palette, ['shell', 'cross', 'latch', 'handle', 'rubber', 'seam'] as const);
-    // A 40 x 22 x 24 cm ABS case, 1.2u per cm.
     const k = 1.2 * u;
     const X = (cm: number): number => c + cm * k;
     const Y = (cm: number): number => g + cm * k;
     const skin = 1.2 / k;
-    // ISO first-aid cross: equal arms, each a third of the overall size.
     const cross = (a: number, b: number, size: number): boolean =>
       (Math.abs(a) <= size / 2 && Math.abs(b) <= size / 6) || (Math.abs(a) <= size / 6 && Math.abs(b) <= size / 2);
 
-    // Rubber feet under the four corners.
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) fillBox(grid, X(sx * 17 - 1.5), Y(0), X(sz * 8 - 1.5), X(sx * 17 + 1.5), Y(1.2), X(sz * 8 + 1.5), solid(palette, palette.id('rubber')));
     }
-    // Base tray with the printed cross on the front and back.
     fillRoundedBox(grid, X(-20), Y(1), X(-11), X(20), Y(16), X(11), 1.6 * k, (x, y, z) => {
       const lx = (x + 0.5 - c) / k;
       const ly = (y + 0.5 - g) / k;
       const lz = (z + 0.5 - c) / k;
       return Math.abs(lz) > 11 - skin && cross(lx, ly - 8.6, 11) ? m.cross : m.shell;
     });
-    // Rubber gasket in the seam between tray and lid.
     fillBox(grid, X(-19.3), Y(15.8), X(-10.3), X(19.3), Y(16.8), X(10.3), () => m.seam);
-    // Lid with a cross on top.
     fillRoundedBox(grid, X(-20), Y(16.6), X(-11), X(20), Y(24), X(11), 1.6 * k, (x, y, z) => {
       const lx = (x + 0.5 - c) / k;
       const ly = (y + 0.5 - g) / k;
       const lz = (z + 0.5 - c) / k;
       return ly > 24 - skin && cross(lx, lz, 12) ? m.cross : m.shell;
     });
-    // Two snap latches across the seam on the front, hinge barrel on the back.
     for (const sx of [-12.5, 12.5]) {
       fillRoundedBox(grid, X(sx - 2.2), Y(12.6), X(10.4), X(sx + 2.2), Y(19.4), X(12.2), 0.6 * k, () => m.latch);
       fillBox(grid, X(sx - 1.4), Y(13.4), X(11.6), X(sx + 1.4), Y(14.6), X(12.6), () => m.seam);
     }
     fillCylinderX(grid, Y(16.3), X(-11.2), X(-16), X(16), 1.1 * k, () => m.latch);
-    // Folding carry handle, raised: pivot blocks, arms and a grip.
     for (const sx of [-9.5, 9.5]) {
       fillRoundedBox(grid, X(sx - 1.6), Y(23.4), X(-2), X(sx + 1.6), Y(25.6), X(2), 0.6 * k, () => m.handle);
       fillCapsule(grid, X(sx), Y(25), c, X(sx * 0.92), Y(28.6), c, 0.95 * k, 0.95 * k, () => m.handle);
@@ -90,6 +82,8 @@ export const firstAid: VoxelObject = {
     fillCapsule(grid, X(-8.7), Y(28.6), c, X(8.7), Y(28.6), c, 1.15 * k, 1.15 * k, () => m.handle);
   },
 };
+
+/* ==================== HOSPITAL ==================== */
 
 const HOSPITAL_COLORS: Record<string, { wall: string; cladding: string; glass: string; frame: string }> = {
   white: { wall: '#e9ebed', cladding: '#a2acb6', glass: '#4f6c86', frame: '#858e97' },
@@ -120,14 +114,12 @@ export const hospital: VoxelObject = {
   build(grid, palette, { layout, u, g }) {
     const c = layout.size / 2;
     const m = mids(palette, ['wall', 'cladding', 'glass', 'frame', 'lit', 'sign', 'pad', 'marking', 'padLight', 'roof', 'plant', 'panel'] as const);
-    // 1u = 1 m: a 50 x 30 m site, two-storey podium and a seven-storey ward tower.
     const X = (mtr: number): number => Math.round(c + mtr * u);
     const Y = (mtr: number): number => Math.round(g + mtr * u);
     const box = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, mat: number): void =>
       fillBox(grid, X(x0), Y(y0), X(z0), X(x1), Y(y1), X(z1), () => mat);
 
     interface Facade { x0: number; x1: number; z0: number; z1: number; y0: number; floors: number; floorH: number; sill: number; win: number; bay: number }
-    /** Clad a block (metres) and cut recessed curtain-wall windows into its four faces, some lit. */
     const block = (f: Facade, faces = [true, true, true, true]): void => {
       const x0 = X(f.x0), x1 = X(f.x1), z0 = X(f.z0), z1 = X(f.z1), y0 = Y(f.y0);
       const y1 = Y(f.y0 + f.floors * f.floorH);
@@ -135,7 +127,6 @@ export const hospital: VoxelObject = {
       fillBox(grid, x0 + 1, y1 - 1, z0 + 1, x1 - 1, y1, z1 - 1, () => m.roof);
       const mullion = Math.max(1, Math.round(0.5 * u));
       const corner = Math.max(1, Math.round(0.8 * u));
-      // Each face: outer voxel line, inward step and the run along the face.
       const sides: { len: number; at: (a: number, depth: number) => [number, number] }[] = [
         { len: x1 - x0, at: (a, d) => [x0 + a, z1 - 1 - d] },
         { len: x1 - x0, at: (a, d) => [x1 - 1 - a, z0 + d] },
@@ -166,21 +157,15 @@ export const hospital: VoxelObject = {
       });
     };
 
-    // Podium: outpatients and emergency, 2 floors of 4.5 m.
     block({ x0: -25, x1: 25, z0: -15, z1: 8, y0: 0, floors: 2, floorH: 4.5, sill: 1.1, win: 2.4, bay: 3 });
-    // Parapet around the podium roof.
     for (const [a0, a1, b0, b1] of [[-25, 25, 7.2, 8], [-25, 25, -15, -14.2], [-25, -24.2, -15, 8], [24.2, 25, -15, 8]]) box(a0, 9, b0, a1, 9.9, b1, m.wall);
-    // Accent band at the podium floor line.
     box(-25.3, 4.3, -15.3, 25.3, 4.9, 8.3, m.cladding);
 
-    // Ward tower: 7 floors of 3.8 m with ribbon windows.
     const towerTop = 9 + 7 * 3.8;
     block({ x0: -19, x1: 13, z0: -13, z1: 1, y0: 9, floors: 7, floorH: 3.8, sill: 1.0, win: 2.2, bay: 2.6 });
     for (const [a0, a1, b0, b1] of [[-19, 13, 0.2, 1], [-19, 13, -13, -12.2], [-19, -18.2, -13, 1], [12.2, 13, -13, 1]]) box(a0, towerTop, b0, a1, towerTop + 1, b1, m.wall);
-    // Stair and lift core, clad in the accent color, rising above the roof.
     box(13, 9, -11, 19, towerTop + 3.4, -1, m.cladding);
     box(12.6, towerTop + 3.4, -11.4, 19.4, towerTop + 4, -0.6, m.frame);
-    // Illuminated hospital cross on the core, facing the street and the side.
     const crossY = towerTop - 3;
     const crossAt = (a: number, b: number): boolean => (Math.abs(a) <= 2 && Math.abs(b) <= 0.7) || (Math.abs(a) <= 0.7 && Math.abs(b) <= 2);
     box(13.6, crossY - 2.7, -1, 18.4, crossY + 2.7, -0.4, m.panel);
@@ -188,9 +173,7 @@ export const hospital: VoxelObject = {
     box(19, crossY - 2.7, -8.4, 19.6, crossY + 2.7, -3.6, m.panel);
     sculpt(grid, X(19.4), Y(crossY - 2.6), X(-8.4), X(19.6) + 1, Y(crossY + 2.6), X(-3.6), (_px, py, pz) => (crossAt((pz - c) / u + 6, (py - g) / u - crossY) ? m.sign : 0));
 
-    // Rooftop plant room with louvres.
     sculpt(grid, X(3), Y(towerTop), X(-11.5), X(11), Y(towerTop + 3.6), X(-5), (_px, py) => (Math.floor((py - g) / u / 0.6) % 2 ? m.plant : m.frame));
-    // Helipad deck on short steel posts: dark deck, white ring and "H", green edge lights.
     const padX = -9;
     const padZ = -6;
     const padR = 6.4;
@@ -212,7 +195,6 @@ export const hospital: VoxelObject = {
       box(lx - 0.35, deckY + 1, lz - 0.35, lx + 0.35, deckY + 1.5, lz + 0.35, m.padLight);
     }
 
-    // Emergency entrance: glazed lobby, a canopy on two columns and a lit sign above.
     sculpt(grid, X(-8), Y(0), X(7), X(8), Y(4.2), X(8), (px) => {
       const run = (px - c) / u + 8;
       return run % 4 < 0.5 ? m.frame : m.glass;
@@ -226,11 +208,12 @@ export const hospital: VoxelObject = {
       const lx = (px - c) / u;
       const ly = (py - g) / u - 7;
       if (crossAt((lx + 5) * 0.62, ly * 0.62)) return m.sign;
-      // A row of letters, suggested by short red strokes.
       return lx > -2.6 && lx < 6.2 && Math.abs(ly) < 0.6 && (lx + 2.6) % 1.1 < 0.8 ? m.sign : 0;
     });
   },
 };
+
+/* ==================== AMBULANCE ==================== */
 
 const AMBULANCE_COLORS: Record<string, { body: string; stripe: string; star: string }> = {
   white: { body: '#f2f3f1', stripe: '#d3202a', star: '#1f5fbf' },
@@ -260,7 +243,6 @@ export const ambulance: VoxelObject = {
   build(grid, palette, { layout, u, g }) {
     const c = layout.size / 2;
     const m = mids(palette, ['body', 'stripe', 'star', 'white', 'chevron', 'glass', 'tire', 'rim', 'hub', 'frame', 'grille', 'chrome', 'seam', 'lamp', 'amber', 'beacon', 'tail'] as const);
-    // Ford E-450 cutaway with a 14 ft module: 6.9 m long, 2.4 m wide, 2.9 m tall; 7u per metre.
     const k = 7 * u;
     const vs = 1 / k;
     const skin = 1.5 * vs;
@@ -269,12 +251,10 @@ export const ambulance: VoxelObject = {
     const REAR_AXLE = -1.4;
     const between = (v: number, a: number, b: number): boolean => v >= a && v < b;
     const wsX = (Y: number): number => 2.45 - (Y - 1.36) * 0.62;
-    // Axle x, inner and outer tire face: single front tires, rear duals.
     const WHEELS = [[FRONT_AXLE, 0.74, 0.98], [REAR_AXLE, 0.6, 1.1]];
 
     const classify = (X: number, Y: number, Zs: number): number => {
       const Z = Math.abs(Zs);
-      // Wheels, with the contact patch on the plot.
       for (const [ax, zin, zout] of WHEELS) {
         const d = Math.sqrt((X - ax) ** 2 + (Y - R) ** 2);
         if (d <= R && Z >= zin && Z <= zout) {
@@ -284,10 +264,8 @@ export const ambulance: VoxelObject = {
         if (d < 0.5 && Y < 1.0 && Z > 0.55) return 0;
         if (d < 0.5 && Y < 1.0) return m.frame;
       }
-      // Ladder frame and running gear under the body.
       if (between(Y, 0.3, 0.62) && Z < 0.45 && between(X, -3.1, 3.1)) return m.frame;
       if (X >= 0.95) {
-        // Cab: bumper, hood, windshield, doors and roof light bar.
         if (between(X, 3.26, 3.48) && between(Y, 0.36, 0.62) && Z <= (X > 3.4 ? 0.9 : 1.0)) return m.chrome;
         let half = 1.0;
         if (X > 3.05) half -= ((X - 3.05) / 0.33) ** 2 * 0.14;
@@ -299,7 +277,6 @@ export const ambulance: VoxelObject = {
         const lightBar = between(X, 1.25, 1.72) && between(Y, 2.24, 2.42) && Z <= 0.86;
         if (lightBar) return Z < 0.22 ? m.lamp : m.beacon;
         if (X > 3.38 || Y < 0.45 || Y >= top || Z > half) {
-          // Door mirrors on short arms.
           if (between(X, 2.05, 2.3) && between(Y, 1.5, 1.98) && between(Z, 1.0, 1.2)) return m.frame;
           return 0;
         }
@@ -313,7 +290,6 @@ export const ambulance: VoxelObject = {
         if (Z > half - skin && Math.abs(X - 1.3) < vs * 0.6 && between(Y, 0.6, 2.2)) return m.seam;
         return m.body;
       }
-      // Patient module.
       if (between(X, -3.6, -3.4) && between(Y, 0.42, 0.58) && Z <= 1.0) return m.seam;
       if (X < -3.4 || Y < 0.6 || Y >= 2.9 || Z > 1.2) {
         if (between(X, -0.9, 0.3) && between(Y, 2.9, 3.08) && Z < 0.62) return m.seam;
@@ -330,7 +306,6 @@ export const ambulance: VoxelObject = {
         if (between(Z, 0.92, 1.16) && between(Y, 0.72, 1.5)) return Y < 0.95 ? m.lamp : Y < 1.2 ? m.amber : m.tail;
         if (Math.abs(Zs) < vs * 0.6 && between(Y, 0.66, 2.62)) return m.seam;
         if (between(Z, 0.18, 0.78) && between(Y, 1.78, 2.34)) return m.glass;
-        // NFPA rear chevrons: alternating red and fluorescent yellow-green.
         if (Z < 0.86 && between(Y, 0.7, 1.56)) return Math.floor((Y - Z * 0.9) / 0.2) % 2 ? m.stripe : m.chevron;
         return m.body;
       }
@@ -342,7 +317,6 @@ export const ambulance: VoxelObject = {
       if (side) {
         if (upperLight && (between(X, 0.48, 0.86) || between(X, -3.34, -2.96))) return m.beacon;
         if (between(Y, 1.08, 1.3) || between(Y, 1.38, 1.52) || between(Y, 2.58, 2.7)) return m.stripe;
-        // Star of Life: three crossed bars with a white rod, on a white border.
         const dx = X + 1.55;
         const dy = Y - 1.98;
         if (dx * dx + dy * dy < 0.66 * 0.66) {
@@ -358,13 +332,11 @@ export const ambulance: VoxelObject = {
           if (border) return m.white;
         }
         if (Zs > 0) {
-          // Curbside entry door with a window.
           if (between(X, -0.45, 0.75) && between(Y, 0.66, 2.56)) {
             if (between(X, -0.25, 0.55) && between(Y, 1.76, 2.3)) return m.glass;
             if (X < -0.45 + vs || X > 0.75 - vs || Y > 2.56 - vs) return m.seam;
           }
         } else if (between(Y, 0.66, 2.5)) {
-          // Street-side equipment compartments.
           for (const sx of [-2.9, -1.95, -0.85, 0.1]) if (Math.abs(X - sx) < vs * 0.6) return m.seam;
         }
       }
@@ -375,6 +347,8 @@ export const ambulance: VoxelObject = {
     sculpt(grid, c - L, g, c - 1.25 * k, c + L, g + 3.12 * k, c + 1.25 * k, (px, py, pz) => classify((px - c) / k, (py - g) / k, (pz - c) / k));
   },
 };
+
+/* ==================== SYRINGE ==================== */
 
 const NEEDLE_GAUGES: Record<string, string> = {
   cream: '#eadcb4',
@@ -401,13 +375,11 @@ export const syringe: VoxelObject = {
   build(grid, palette, { layout, u, g }) {
     const c = layout.size / 2;
     const m = mids(palette, ['clear', 'plunger', 'stopper', 'liquid', 'print', 'hub', 'steel', 'glass', 'crimp', 'label', 'labelBand'] as const);
-    // 20 ml syringe (barrel 2 cm across, 23.2 cm tip to thumb rest with the needle), 2.2u per cm.
     const k = 2.2 * u;
     const vs = 1 / k;
     const thin = Math.max(0.16, 0.55 * vs);
     const sx0 = c - 11.6 * k;
     const sz = c + 1 * k;
-    // It rests on the finger flange (1.35 cm half-height) and the front of the barrel (1 cm radius).
     const axisY = (s: number): number => 1.35 - (s - 7.35) * (0.35 / 9.65);
 
     const classify = (s: number, p: number, q: number): number => {
@@ -418,7 +390,6 @@ export const syringe: VoxelObject = {
       if (s < 7.35) return (p / 2.4) ** 2 + (q / 1.35) ** 2 <= 1 ? m.clear : 0;
       if (s < 17) {
         if (r > 1) return 0;
-        // Printed scale on the upper side: a tick every 2 ml, longer every 10 ml.
         const ml = (s - 9.8) / 0.352;
         if (r > 1 - 1.2 * vs && ml > -0.2 && ml < 20.2) {
           const tick = Math.abs(ml - Math.round(ml / 2) * 2) * 0.352 < 0.5 * vs;
@@ -440,10 +411,8 @@ export const syringe: VoxelObject = {
       return classify(s, (pz - sz) / k, (py - g) / k - axisY(s));
     });
 
-    // The needle's protective cap, pulled off and lying beside it.
     fillCapsule(grid, sx0 + 15.5 * k, g + 0.45 * k, sz + 3.4 * k, sx0 + 20 * k, g + 0.45 * k, sz + 4.6 * k, 0.45 * k, 0.4 * k, () => m.hub);
 
-    // 10 ml vial standing behind: glass, label, aluminium crimp and a flip-off cap.
     const vx = sx0 + 4.5 * k;
     const vz = sz - 6 * k;
     const vialRadius = (h: number): number => {
@@ -465,6 +434,8 @@ export const syringe: VoxelObject = {
     });
   },
 };
+
+/* ==================== HEART ==================== */
 
 const HEART_COLORS: Record<string, string> = {
   red: '#c81e2c',
@@ -491,16 +462,13 @@ export const heart: VoxelObject = {
   build(grid, palette, { layout, u, g }) {
     const c = layout.size / 2;
     const m = mids(palette, ['heart', 'granite', 'plinthTop', 'brass', 'tubing', 'steel', 'diaphragm'] as const);
-    // Granite drum 20u across and 5u tall; the heart's point is set 2.6u into it.
     const baseH = 5 * u;
     fillCylinderY(grid, c, c, g, g + baseH - 0.6 * u, 10 * u, () => m.granite);
     fillCylinderY(grid, c, c, g + baseH - 0.6 * u, g + baseH, 9.6 * u, () => m.plinthTop);
-    // Brass plaque on the front of the drum.
     sculpt(grid, c - 3.4 * u, g + 1.4 * u, c + 9 * u, c + 3.4 * u, g + 3.6 * u, c + 10.6 * u, (px, _py, pz) => {
       const r = Math.hypot(px - c, pz - c);
       return r > 10 * u - 1 && r < 10 * u + 0.8 ? m.brass : 0;
     });
-    // Taubin's heart surface: (x² + 9/4·d² + h² − 1)³ − x²·h³ − 9/80·d²·h³ ≤ 0, 2.27 wide and 2.23 tall.
     const S = 19 * u;
     const yc = g + baseH - 2.6 * u + 0.995 * S;
     sculpt(grid, c - 1.15 * S, g + baseH - 2.6 * u, c - 0.68 * S, c + 1.15 * S, yc + 1.25 * S, c + 0.68 * S, (px, py, pz) => {
@@ -511,10 +479,8 @@ export const heart: VoxelObject = {
       return f <= 0 ? m.heart : 0;
     });
 
-    // A stethoscope hung over the dip between the lobes: chest piece hanging in front, binaurals down the back.
     const inside = (x: number, h: number, d: number): boolean =>
       (x * x + 2.25 * d * d + h * h - 1) ** 3 - x * x * h ** 3 - 0.1125 * d * d * h ** 3 <= 0;
-    /** Depth of the heart surface at (x, h), in heart units. */
     const depthAt = (x: number, h: number): number => {
       if (!inside(x, h, 0)) return 0;
       let lo = 0;
@@ -542,7 +508,6 @@ export const heart: VoxelObject = {
     const pieceTop = -0.42;
     front.push(at(0, pieceTop, hangD));
     strand(front, tube, m.tubing);
-    // Chest piece: steel stem and a diaphragm disc facing out.
     const [px, py, pz] = at(0, pieceTop, hangD);
     const discR = 2.6 * u;
     fillCapsule(grid, px, py, pz, px, py - 1.6 * u, pz, 0.6 * u, 0.6 * u, () => m.steel);
@@ -551,7 +516,6 @@ export const heart: VoxelObject = {
     const back: [number, number, number][] = [at(0, 0.998 + tube / S, 0)];
     for (let h = 0.95; h >= 0.6; h -= 0.05) back.push(lie(0, h, -1, tube));
     strand(back, tube, m.tubing);
-    // Y-piece, then two spring-steel binaurals ending in ear tips.
     const yoke = lie(0, 0.58, -1, tube);
     fillEllipsoid(grid, yoke[0], yoke[1], yoke[2], 1.1 * u, 1.3 * u, 1.1 * u, () => m.tubing);
     for (const sx of [-1, 1]) {
@@ -564,3 +528,4 @@ export const heart: VoxelObject = {
     }
   },
 };
+

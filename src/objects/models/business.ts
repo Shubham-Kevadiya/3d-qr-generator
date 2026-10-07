@@ -1,18 +1,16 @@
-import type { VoxelGrid } from '../voxel/grid';
-import { fbm3, hash3 } from '../voxel/noise';
-import type { Palette } from '../voxel/palette';
+import type { VoxelGrid } from '../../voxel/grid';
+import { fbm3, hash3 } from '../../voxel/noise';
+import type { Palette } from '../../voxel/palette';
 import {
   fillBox, fillCapsule, fillCylinderY, fillCylinderZ, fillEllipsoid, fillLathe, fillRoundedBox, type Chooser,
-} from '../voxel/shapes';
-import { materialPalette } from './kit';
-import type { VoxelObject } from './types';
+} from '../../voxel/shapes';
+import { materialPalette } from '../helpers/kit';
+import type { VoxelObject } from '../types';
 
-/** Natural-tone material index by family name. */
 function mid(palette: Palette, name: string): number {
   return palette.tone(palette.id(name), 'mid');
 }
 
-/** Flat slab in the X-Y plane, `z0`..`z1` thick, filled where `inside(px, py)` holds for the voxel center. */
 function fillProfileZ(
   grid: VoxelGrid,
   x0: number, y0: number, x1: number, y1: number, z0: number, z1: number,
@@ -22,7 +20,6 @@ function fillProfileZ(
   fillBox(grid, x0, y0, z0, x1, y1, z1, (x, y, z) => (inside(x + 0.5, y + 0.5) ? choose(x, y, z) : 0));
 }
 
-/** Distance from point p to segment ab in 2D. */
 function segmentDistance(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax;
   const dy = by - ay;
@@ -36,10 +33,6 @@ const TOWER_GLASS: Record<string, { glass: string; spandrel: string; mullion: st
   teal: { glass: '#3f8d8a', spandrel: '#1d4847', mullion: '#d6dbdf' },
 };
 
-/**
- * A 150 m curtain-wall office tower at 1u = 2.5 m: 40 x 35 m floor plate, 4 m floors, a setback at 100 m and a
- * louvred crown hiding the rooftop plant, on a two-storey stone lobby podium.
- */
 export const officeTower: VoxelObject = {
   id: 'office-tower',
   name: 'Office Tower',
@@ -82,7 +75,6 @@ export const officeTower: VoxelObject = {
     const LOUVRE = mid(palette, 'louvre');
     const HEDGE = mid(palette, 'hedge');
 
-    // Podium: 75 x 60 m, 10 m tall — an 8 m glass lobby between stone piers under a stone fascia.
     const px0 = r(c - 15 * u), px1 = r(c + 15 * u), pz0 = r(c - 12 * u), pz1 = r(c + 12 * u);
     const podiumTop = r(g + 4 * u);
     const lobbyTop = r(g + 3.2 * u);
@@ -95,11 +87,9 @@ export const officeTower: VoxelObject = {
       if (y >= lobbyTop || (ex && ez)) return STONE;
       const along = ez ? x - px0 : z - pz0;
       if (along % pier === 0) return STONE;
-      // Revolving doors in the middle of the front.
       if (z === pz1 - 1 && Math.abs(x + 0.5 - c) < 2.2 * u && y < g + 2.4 * u) return DOOR;
       return LOBBY;
     });
-    // Planters along the podium roof edge.
     const hedge = (): number => HEDGE;
     const hy0 = podiumTop;
     const hy1 = podiumTop + Math.max(1, 1.1 * u);
@@ -107,12 +97,10 @@ export const officeTower: VoxelObject = {
     fillBox(grid, px0 + 1, hy0, pz0 + 1, px1 - 1, hy1, pz0 + 1 + Math.max(1, u), hedge);
     fillBox(grid, px0 + 1, hy0, pz0 + 1, px0 + 1 + Math.max(1, u), hy1, pz1 - 1, hedge);
     fillBox(grid, px1 - 1 - Math.max(1, u), hy0, pz0 + 1, px1 - 1, hy1, pz1 - 1, hedge);
-    // Entrance canopy, carried on two steel columns at its outer edge.
     const canopyY = g + 2.6 * u;
     fillBox(grid, c - 5 * u, canopyY, pz1, c + 5 * u, canopyY + Math.max(1, 0.5 * u), pz1 + 3 * u, () => MULLION);
     for (const s of [-1, 1]) fillCylinderY(grid, c + s * 4.3 * u, pz1 + 2.4 * u, g, canopyY, Math.max(0.6, 0.5 * u), () => MULLION);
 
-    // Shaft: vision glass between aluminium mullions every 5 m, opaque spandrel at each 4 m floor line.
     const zc = c - 1 * u;
     const floorVox = Math.max(2, r(1.6 * u));
     const bayVox = Math.max(3, r(2 * u));
@@ -136,13 +124,11 @@ export const officeTower: VoxelObject = {
         const along = ez ? x - x0 : z - z0;
         if (along % bayVox === 0) return MULLION;
         const face = ez ? (z === z0 ? 0 : 1) : (x === x0 ? 2 : 3);
-        // Some offices still have their lights on.
         return hash3(Math.floor(along / bayVox), Math.floor(floor / floorVox), face + si * 4, seed) < 0.16 ? LIT : GLASS;
       });
       y0 = y1;
     });
 
-    // Crown: a louvred screen wall around the rooftop plant.
     const crownTop = r(g + 55.5 * u);
     const cx0 = x0 + 1, cx1 = x1 - 1, cz0 = z0 + 1, cz1 = z1 - 1;
     fillBox(grid, cx0, y0, cz0, cx1, crownTop, cz1, (x, y, z) => {
@@ -150,7 +136,6 @@ export const officeTower: VoxelObject = {
       if (!edge) return 0;
       return y === crownTop - 1 || (y - y0) % 2 === 1 ? MULLION : LOUVRE;
     });
-    // Plant: lift overrun and two cooling units with fan decks.
     const plant = (): number => PLANT;
     const coreTop = y0 + 3.6 * u;
     fillBox(grid, c - 2 * u, y0, zc - 3 * u, c + 2 * u, coreTop, zc + 0.5 * u, plant);
@@ -159,7 +144,6 @@ export const officeTower: VoxelObject = {
       fillBox(grid, ux - 1.3 * u, y0, zc - 3.6 * u, ux + 1.3 * u, y0 + 2.4 * u, zc + 3.6 * u, plant);
       for (const fz of [-1.8, 1.8]) fillCylinderY(grid, ux, zc + fz * u, y0 + 2.4 * u, y0 + 2.4 * u + 1, 0.95 * u, () => LOUVRE);
     }
-    // Antenna mast with an aircraft warning light.
     const mastTop = g + 61 * u;
     fillCylinderY(grid, c, zc - 1.2 * u, coreTop, mastTop, Math.max(0.7, 0.55 * u), () => MULLION);
     fillEllipsoid(grid, c, mastTop, zc - 1.2 * u, Math.max(0.9, 0.8 * u), Math.max(0.9, 0.8 * u), Math.max(0.9, 0.8 * u), () => mid(palette, 'beacon'));
@@ -172,10 +156,6 @@ const LEATHER: Record<string, { leather: string; thread: string; metal: string }
   blue: { leather: '#1f3d70', thread: '#d9dde3', metal: '#c9a548' },
 };
 
-/**
- * A hard-sided leather attaché case at 1u = 1 cm: 45 x 33 x 11 cm, standing on four studs on its bottom edge,
- * with a metal valance at the lid seam, two latches either side of the handle and saddle-stitched faces.
- */
 export const briefcase: VoxelObject = {
   id: 'briefcase',
   name: 'Briefcase',
@@ -202,10 +182,8 @@ export const briefcase: VoxelObject = {
     const hz = 5.5 * u;
     const bottom = g + 1 * u;
     const top = g + 34 * u;
-    // Shell with rounded corners and edges.
     fillRoundedBox(grid, c - hx, bottom, c - hz, c + hx, top, c + hz, 1.8 * u, leather);
 
-    // Metal valance around the edge at the lid seam (lid is the front 4 cm).
     const seamZ = c + 1.5 * u;
     const grow = Math.max(0.6, 0.35 * u);
     const corner = 1.8 * u + grow;
@@ -215,7 +193,6 @@ export const briefcase: VoxelObject = {
       return qx * qx + qy * qy <= corner * corner;
     }, metal);
 
-    // Saddle stitching inset 2 cm from the edge of both faces: dashed thread on the outermost voxels.
     const inset = 2 * u;
     const sx = hx - inset;
     const sy = (top - bottom) / 2 - inset;
@@ -235,16 +212,13 @@ export const briefcase: VoxelObject = {
       }
     }
 
-    // Brass studs on the bottom edge carry the case.
     for (const fx of [-18, 18]) {
       for (const fz of [-3, 3]) fillCylinderY(grid, c + fx * u, c + fz * u, g, bottom + 0.5, Math.max(0.8, 1 * u), metal);
     }
-    // Latches either side of the handle, straddling the seam on the top edge.
     for (const s of [-1, 1]) {
       const lx = c + s * 13 * u;
       fillRoundedBox(grid, lx - 2 * u, top - 0.6 * u, seamZ - 2.2 * u, lx + 2 * u, top + Math.max(1, 0.9 * u), seamZ + 2.2 * u, 0.5 * u, metal);
     }
-    // Handle: rounded leather grip on two metal loops.
     const ringH = Math.max(1, 1.4 * u);
     for (const s of [-1, 1]) {
       fillBox(grid, c + s * 6.2 * u - 0.7 * u, top - 0.5, seamZ - 0.7 * u, c + s * 6.2 * u + 0.7 * u, top + ringH, seamZ + 0.7 * u, metal);
@@ -263,7 +237,6 @@ const BAG: Record<string, { cloth: string; inner: string; ink: string; rope: str
   purple: { cloth: '#56296f', inner: '#3a1b4b', ink: '#e2bb4c', rope: '#e2bb4c', ropeShade: '#b08a2a' },
 };
 
-/** "$" glyph, 7 x 10 cells, top row first. */
 const DOLLAR = [
   '...#...',
   '.#####.',
@@ -277,10 +250,6 @@ const DOLLAR = [
   '...#...',
 ];
 
-/**
- * A full sack of coins at 1u = 1 cm: a 44 cm canvas bag slumped wide under its weight, gathered and tied at the
- * neck with a jute rope, with 40 mm gold coins stacked and spilled around it.
- */
 export const moneyBag: VoxelObject = {
   id: 'money-bag',
   name: 'Money Bag',
@@ -310,7 +279,6 @@ export const moneyBag: VoxelObject = {
 
     const squash = 0.86;
     const neck = 4.6;
-    // Radius (cm) of the bag at height h (cm) before folds; 0 above the frill.
     const radius = (h: number): number => {
       if (h < 11) return 19 * Math.sqrt(Math.max(0, 1 - ((11 - h) / 18) ** 2));
       if (h < 33) return neck + 14.4 * Math.cos(((h - 11) / 22) * Math.PI / 2) ** 1.3;
@@ -328,7 +296,6 @@ export const moneyBag: VoxelObject = {
           const dz = (z + 0.5 - c) / u / squash;
           const d = Math.hypot(dx, dz);
           const a = Math.atan2(dz, dx);
-          // Gathered creases running up into the neck, deeper pleats in the frill above the tie.
           const crease = h > 36.5 ? 0.18 * Math.sin(11 * a) : h > 22 ? Math.min(1, (h - 22) / 11) * 0.08 * Math.sin(9 * a + 0.6) : 0;
           const lumps = h < 33 ? (fbm3(dx * 0.16, h * 0.16, dz * 0.16, 5) - 0.5) * 0.09 : 0;
           const outer = base * (1 + crease + lumps);
@@ -340,7 +307,6 @@ export const moneyBag: VoxelObject = {
             continue;
           }
           let material = CLOTH;
-          // Printed "$" on the front, on the outermost layer of cloth.
           const front = (z + 0.5 - c) / u;
           const surfaceZ = squash * Math.sqrt(Math.max(0, outer * outer - dx * dx));
           if (front > 0 && (surfaceZ - front) * u < 1.6) {
@@ -353,7 +319,6 @@ export const moneyBag: VoxelObject = {
       }
     }
 
-    // Jute rope tied around the gathered neck, twisted, with a knot and two loose ends hanging down the front.
     const ropeY = 34.8;
     const ropeR = neck + 1.1;
     fillBox(grid, c - 9 * u, g + 32 * u, c - 9 * u, c + 9 * u, g + 38 * u, c + 9 * u, (x, y, z) => {
@@ -369,7 +334,6 @@ export const moneyBag: VoxelObject = {
     const knotZ = surfaceFront(0, ropeY) + 0.4 * u;
     const rope = (): number => ROPE;
     fillEllipsoid(grid, c + 0.6 * u, g + ropeY * u, knotZ, 1.9 * u, 1.6 * u, 1.5 * u, rope);
-    // Each loose end drapes down the cloth, following the surface.
     for (const [ex, endH] of [[-1.8, 27.5], [2.8, 26]]) {
       let px = c + 0.6 * u;
       let py = g + ropeY * u;
@@ -383,7 +347,6 @@ export const moneyBag: VoxelObject = {
       }
     }
 
-    // Coin stacks: 40 mm coins, alternating face and rim tone so each coin reads, slightly out of line.
     const coinR = 2.3 * u;
     const stacks: [number, number, number][] = [[17, 16, 12], [23, 6, 7], [-18, 17, 9], [8, 22, 5], [-24, 3, 15]];
     stacks.forEach(([sx, sz, height], si) => {
@@ -395,7 +358,6 @@ export const moneyBag: VoxelObject = {
         fillCylinderY(grid, c + sx * u + jx, c + sz * u + jz, g + i, g + i + 1, coinR, () => tone);
       }
     });
-    // Loose coins lying flat where they fell, each resting on whatever is below it.
     const loose: [number, number][] = [[-4, 21], [0, 23.5], [2.5, 20.5], [-8.5, 22.5], [12, 24.3], [-1.5, 22.2], [-12, 20]];
     for (const [lx, lz] of loose) {
       const cx = c + lx * u;
@@ -413,10 +375,6 @@ export const moneyBag: VoxelObject = {
 
 const CART_PLASTIC: Record<string, string> = { blue: '#1f5fbf', red: '#c62828', teal: '#14857f' };
 
-/**
- * A supermarket trolley at 1u = 2 cm: 96 cm long, 54 cm wide, handle at 100 cm. Zinc-plated wire basket tapered
- * for nesting, folding child-seat flap on the back gate, lower tray and four 125 mm swivel casters.
- */
 export const shopCart: VoxelObject = {
   id: 'shop-cart',
   name: 'Shop Cart',
@@ -442,7 +400,7 @@ export const shopCart: VoxelObject = {
   },
   build(grid, palette, { layout, u, g }) {
     const c = layout.size / 2;
-    const k = u / 2; // voxels per cm
+    const k = u / 2;
     const ox = c + 3 * k;
     const X = (cm: number): number => ox + cm * k;
     const Y = (cm: number): number => g + cm * k;
@@ -451,10 +409,9 @@ export const shopCart: VoxelObject = {
     const PLASTIC = mid(palette, 'plastic');
     const wireM = (): number => WIRE;
     const plastic = (): number => PLASTIC;
-    const wire = Math.max(2, 1.05 / k); // wire gauge in cm (at least one voxel)
-    const tube = Math.max(1.25, 0.6 / k); // frame tube radius in cm
+    const wire = Math.max(2, 1.05 / k);
+    const tube = Math.max(1.25, 0.6 / k);
 
-    // Basket: floor at 48 cm, rim at 88 cm, vertical back gate, front sloping out; 54 cm wide at the back, 44 at the front.
     const yb = 48, yt = 88, xb = -42, xFront = 44;
     const xf = (py: number): number => 26 + (py - yb) * (18 / 40);
     const hw = (px: number): number => 27 - 5 * (px - xb) / (xFront - xb);
@@ -470,20 +427,16 @@ export const shopCart: VoxelObject = {
       const dBottom = py - yb;
       const walls = [dSide, dBack, dFront, dBottom].filter((d) => d < wire).length;
       if (walls === 0) return 0;
-      // Rolled top rim and the edges where panels meet are the heavy frame wires.
       if ((yt - py < tube * 2 && Math.min(dSide, dBack, dFront) < wire) || walls > 1) return WIRE;
       if (dBottom < wire) return on(pz, 6, 1) || on(px, 13, xb) ? WIRE : 0;
       if (dSide < wire) return on(px, 6, xb) || on(py, 13, yb) ? WIRE : 0;
       return on(pz, 6, 1) || on(py, 13, yb) ? WIRE : 0;
     });
-    // Child seat flap folded flat against the inside of the back gate.
     fillRoundedBox(grid, X(xb) + wire * k, Y(62), Z(-15), X(xb) + wire * k + Math.max(1, 2 * k), Y(86), Z(15), 1.5 * k, plastic);
-    // Bumper caps on the front corners of the rim.
     for (const s of [-1, 1]) {
       fillRoundedBox(grid, X(xFront - 5), Y(yt - 4), Z(s * hw(xFront) - 3), X(xFront + 1.5), Y(yt + 1.5), Z(s * hw(xFront) + 3), 1.2 * k, plastic);
     }
 
-    // Chassis: rear legs rising into the handle, base rails, cross bars, front basket struts, lower tray.
     const R = tube * k;
     const railZ = (px: number): number => 22 - 5 * (px + 38) / 72;
     for (const s of [-1, 1]) {
@@ -500,11 +453,9 @@ export const shopCart: VoxelObject = {
       if (Math.abs(pz) > railZ(px)) return 0;
       return on(pz, 6, 1) || on(px, 13, -36) ? WIRE : 0;
     });
-    // Handle bar with a plastic grip.
     fillCapsule(grid, X(-50.5), Y(99.5), Z(-26), X(-50.5), Y(99.5), Z(26), R, R, wireM);
     fillCylinderZ(grid, X(-50.5), Y(99.5), Z(-21), Z(21), 2.2 * k, plastic);
 
-    // 125 mm swivel casters: rubber tyre, grey hub, fork plates and a swivel plate under the rail.
     const RUBBER = mid(palette, 'rubber');
     const HUB = mid(palette, 'hub');
     const wheelR = 6.25;
@@ -521,7 +472,6 @@ export const shopCart: VoxelObject = {
       fillBox(grid, cx - 3.5 * k, Y(11), cz - half - 2, cx + 3.5 * k, Y(13), cz + half + 2, () => HUB);
     }
 
-    // Groceries standing on the basket floor.
     const floor = yb + wire;
     const m = (name: string): (() => number) => {
       const material = mid(palette, name);
@@ -539,7 +489,7 @@ export const shopCart: VoxelObject = {
     fillBox(grid, X(-9), Y(floor), Z(-21), X(1), Y(floor + 27), Z(-11), (x, y) => {
       const py = (y + 0.5 - g) / k;
       const px = (x + 0.5 - ox) / k;
-      if (py > floor + 21 && Math.abs(px + 4) > 5 * (floor + 27 - py) / 6) return 0; // gable top
+      if (py > floor + 21 && Math.abs(px + 4) > 5 * (floor + 27 - py) / 6) return 0;
       return py > floor + 8 && py < floor + 15 ? BAND : MILK;
     });
     fillRoundedBox(grid, X(4), Y(floor), Z(-2), X(20), Y(floor + 11), Z(12), 3.5 * k, m('crust'));
@@ -557,7 +507,6 @@ export const shopCart: VoxelObject = {
     const apples: [number, number][] = [[8, -16], [16.5, -14], [11, -8.5]];
     for (const [ax, az] of apples) fillEllipsoid(grid, X(ax), Y(floor + ar), Z(az), ar * k, ar * k, ar * k, apple);
     fillEllipsoid(grid, X(11.8), Y(floor + ar + 6.3), Z(-12.8), ar * k, ar * k, ar * k, apple);
-    // Baguette leaning from the floor onto the back gate rim.
     fillCapsule(grid, X(20), Y(floor + 3), Z(18), X(-47), Y(94.1), Z(18), 3 * k, 3 * k, m('baguette'));
   },
 };
@@ -568,10 +517,6 @@ const CHART: Record<string, { bars: string[]; arrow: string }> = {
   purple: { bars: ['#c3a6ea', '#a684de', '#8b63d0', '#7047b8', '#56329a'], arrow: '#f0b232' },
 };
 
-/**
- * A desk-sculpture bar chart at 1u = 1 cm: five acrylic bars rising 12 to 42 cm on a 48 x 24 cm slate base, with a
- * growth arrow fixed to the bar fronts and its head resting on the tallest bar.
- */
 export const growthChart: VoxelObject = {
   id: 'growth-chart',
   name: 'Growth Chart',
@@ -591,7 +536,6 @@ export const growthChart: VoxelObject = {
     const c = layout.size / 2;
     const baseTop = g + 2.5 * u;
     fillRoundedBox(grid, c - 24 * u, g, c - 12 * u, c + 24 * u, baseTop, c + 12 * u, 0.8 * u, () => mid(palette, 'base'));
-    // Brushed-metal axis line along the front of the base.
     fillBox(grid, c - 22 * u, baseTop - 0.5, c + 8.5 * u, c + 22 * u, baseTop + Math.max(0.6, 0.4 * u), c + 9.5 * u, () => mid(palette, 'edge'));
 
     const heights = [12, 18, 24, 32, 42];
@@ -603,7 +547,6 @@ export const growthChart: VoxelObject = {
       fillRoundedBox(grid, bx - 3 * u, baseTop - 1, barZ0, bx + 3 * u, baseTop + h * u, barZ1, 0.7 * u, () => material);
     });
 
-    // Arrow: a 2.6 cm band, 2.4 cm deep, glued to the bar fronts; a dip at the third bar, head on the tallest.
     const pts: [number, number][] = [[-21, 8], [-9, 14], [0, 12], [9, 21], [18, 30], [20.4, 33.2]];
     const ARROW = mid(palette, 'arrow');
     const half = 1.3;
@@ -621,7 +564,6 @@ export const growthChart: VoxelObject = {
       for (let i = 0; i < pts.length - 1; i++) {
         if (segmentDistance(lx, ly, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) <= half) return true;
       }
-      // Triangular head beyond the shaft end.
       const along = (lx - hx) * dx + (ly - hy) * dy;
       const across = Math.abs(-(lx - hx) * dy + (ly - hy) * dx);
       return along >= 0 && along <= headLen && across <= headHalf * (1 - along / headLen);
@@ -629,3 +571,4 @@ export const growthChart: VoxelObject = {
     fillProfileZ(grid, c - 25 * u, baseTop, c + 27 * u, baseTop + 44 * u, barZ1, barZ1 + 2.4 * u, inside, () => ARROW);
   },
 };
+

@@ -1,6 +1,5 @@
-import type { VoxelGrid } from '../voxel/grid';
+import type { VoxelGrid } from '../../voxel/grid';
 
-/** Piecewise-linear interpolation through [x, y] keypoints sorted by x; clamps outside the range. */
 export function curve(points: [number, number][]): (x: number) => number {
   return (x) => {
     if (x <= points[0][0]) return points[0][1];
@@ -18,15 +17,9 @@ export function curve(points: [number, number][]): (x: number) => number {
 export interface WheelMaterials {
   tire: number;
   rim: number;
-  /** Gaps between spokes, brake disc and the inside of the barrel. */
   dark: number;
 }
 
-/**
- * Road wheel on an axle along Z (the vehicle runs along X): a tire with rounded shoulders, and an alloy rim on the
- * outer face with `spokes` spokes, recessed a little behind the sidewall. `outer` is the z of the outer face and
- * `inward` is -1 or +1, the direction towards the vehicle's centerline. All sizes are in voxels.
- */
 export function wheelZ(
   grid: VoxelGrid, mats: WheelMaterials,
   cx: number, cy: number, outer: number, inward: 1 | -1,
@@ -62,10 +55,6 @@ export function wheelZ(
   }
 }
 
-/**
- * Copy every voxel of `src` into `dst`, tilted sideways by `angle` radians about the X-axis line (y = pivotY,
- * z = pivotZ) — e.g. a parked bicycle leaning onto its kickstand. Positive angles lean the top towards -Z.
- */
 export function stampLeanX(dst: VoxelGrid, src: VoxelGrid, pivotY: number, pivotZ: number, angle: number): void {
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
@@ -85,3 +74,4 @@ export function stampLeanX(dst: VoxelGrid, src: VoxelGrid, pivotY: number, pivot
     }
   }
 }
+
