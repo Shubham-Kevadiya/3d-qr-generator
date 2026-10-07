@@ -1,0 +1,23 @@
+{
+  "name": "voxel-qr",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "jsqr": "^1.4.0",
+    "onnxruntime-web": "^1.30.0",
+    "qrcode-generator": "^1.4.4",
+    "zxing-wasm": "^3.1.5"
+  },
+  "devDependencies": {
+    "@types/qrcode-generator": "^1.0.6",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.3",
+    "vitest": "^5.0.3"
+  }
+}
