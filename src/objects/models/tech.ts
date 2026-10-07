@@ -1,8 +1,8 @@
-import type { VoxelGrid } from '../voxel/grid';
-import type { Palette } from '../voxel/palette';
-import { fillBox, fillCapsule, fillCylinderX, fillCylinderY, fillCylinderZ, fillEllipsoid, fillLathe, fillRoundedBox } from '../voxel/shapes';
-import { materialPalette } from './kit';
-import type { VoxelObject } from './types';
+import type { VoxelGrid } from '../../voxel/grid';
+import type { Palette } from '../../voxel/palette';
+import { fillBox, fillCapsule, fillCylinderX, fillCylinderY, fillCylinderZ, fillEllipsoid, fillLathe, fillRoundedBox } from '../../voxel/shapes';
+import { materialPalette } from '../helpers/kit';
+import type { VoxelObject } from '../types';
 
 type Vec = [number, number, number];
 
@@ -319,7 +319,7 @@ const RACK_UNITS: Record<RackUnit, number> = { ups: 3, storage: 4, server2: 2, s
 /** Bottom-to-top contents of the three cabinets, in rack units. */
 const RACKS: RackUnit[][] = [
   ['ups', 'blank', 'storage', 'storage', 'blank', 'server2', 'server2', 'server2', 'server2', 'empty', 'empty', 'server1', 'server1', 'server1', 'server1', 'blank', 'blank', 'empty', 'empty', 'cable', 'switch', 'patch'],
-  ['ups', 'server2', 'server2', 'server2', 'server2', 'server2', 'server2', 'blank', 'storage', 'server1', 'server1', 'server1', 'server1', 'server1', 'server1', 'empty', 'empty', 'blank', 'cable', 'switch', 'switch', 'patch'],
+  ['ups', 'server2', 'server2', 'server2', 'server2', 'server2', 'server2', 'blank', 'storage', 'server1', 'server1', 'server1', 'server1', 'server1', 'blank', 'cable', 'switch', 'switch', 'patch'],
   ['ups', 'storage', 'storage', 'server2', 'server2', 'server2', 'blank', 'server1', 'server1', 'server1', 'server1', 'server1', 'server1', 'server1', 'server1', 'empty', 'empty', 'empty', 'empty', 'switch', 'patch'],
 ];
 
@@ -739,3 +739,4 @@ export const robot: VoxelObject = {
     }
   },
 };
+

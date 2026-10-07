@@ -1,8 +1,7 @@
-import { Palette } from '../voxel/palette';
+import { Palette } from '../../voxel/palette';
 import { addGroundFamilies, paletteSet, type GroundTheme } from './common';
-import type { PaletteSet } from './types';
+import type { PaletteSet } from '../types';
 
-/** Ground themes copied from long-passing objects — guaranteed luminance gap >= 110. */
 export const CATEGORY_GROUND: Record<string, GroundTheme> = {
   tech: { tileA: ['#2a2d34', '#8a8f98', '#cfd3da'], tileB: ['#30343c', '#868b94', '#c4c8d0'], accent: ['#0f3a5a', '#3a8ac8', '#a8d8ff'] },
   medical: { tileA: ['#4a3f48', '#a79ea4', '#f3ede6'], tileB: ['#3f4a45', '#a2aaa4', '#ebe8de'], accent: ['#7a1020', '#e05060', '#ffc0c8'] },
@@ -14,7 +13,6 @@ export const CATEGORY_GROUND: Record<string, GroundTheme> = {
   sports: { tileA: ['#2a2d34', '#8a8f98', '#cfd3da'], tileB: ['#30343c', '#868b94', '#c4c8d0'], accent: ['#1d5a2a', '#4fa05a', '#c0e8c0'] },
 };
 
-/** Pre-checked main-color triples. Dark/light luminance gap is well above the 85 scanner minimum. */
 export const SAFE_MAINS: Record<string, [string, string, string]> = {
   red: ['#5a0b12', '#c8232c', '#ffb9b0'],
   blue: ['#0f2a5a', '#2563c8', '#a9c8ff'],
@@ -36,16 +34,6 @@ export const TIRE: [string, string, string] = ['#0b0b0d', '#1c1e22', '#8a8f96'];
 export const GOLD: [string, string, string] = ['#6a4a00', '#f2b705', '#fff0a0'];
 export const CREAM: [string, string, string] = ['#6a5a40', '#d8c8a8', '#fff4e0'];
 
-/** Standard palette: main + trim + glass + tire + glow, plus category ground.
- *
- * SCAN-SAFETY RULES (learned from jsQR failures — the voxel suite enforces them):
- * - Wide flat tops must use ground-like families (stone/tile/cream): a pale "dark"
- *   tone corrupts every module beneath it beyond ECC.
- * - Keep every part's footprint over the plinth or the model's own mass. Thin bits
- *   dangling over open code (cords, poles, tassels) can break detection even when
- *   module averages look perfect — drape them along faces instead.
- * - Wheels/rollers are vertical discs facing ±Z (see fillCylinderZ); vehicles run along X.
- */
 export function standardPalette(category: string, main: [string, string, string], glow: [string, string, string] = GOLD): PaletteSet {
   const palette = new Palette();
   palette.addFamily('main', ...main);
@@ -83,29 +71,21 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${f(0)}${f(8)}${f(4)}`;
 }
 
-/** The QR scan tones for a natural color: a deep and a pale shade of the same hue, far apart in luminance. */
 export function scanTones(hex: string): [string, string] {
   const [h, s] = hexToHsl(hex);
   return [hslToHex(h, Math.min(s, 0.55), 0.13), hslToHex(h, Math.min(s, 0.6), 0.9)];
 }
 
-/**
- * Register a real-world material by its natural color. Objects are drawn only with the natural (mid) tone; the
- * dark and light tones exist for the scan view, which recolors the top of each column into the QR. Use one
- * material per distinct surface (paint, rubber, chrome, glass ...) instead of random dark/light speckle.
- */
 export function addMaterial(palette: Palette, name: string, hex: string, emissive = false): number {
   const [dark, light] = scanTones(hex);
   return palette.addFamily(name, dark, hex, light, emissive);
 }
 
-/** Chooser that paints a family's natural tone. */
 export function solid(palette: Palette, family: number): () => number {
   const material = palette.tone(family, 'mid');
   return () => material;
 }
 
-/** Palette for one model: the category ground plus the given named natural colors. Returns family ids by name. */
 export function materialPalette<K extends string>(
   category: string,
   colors: Record<K, string | { hex: string; glow: true }>,
@@ -119,3 +99,4 @@ export function materialPalette<K extends string>(
   const ground = addGroundFamilies(palette, CATEGORY_GROUND[category] ?? CATEGORY_GROUND.tech);
   return { ...paletteSet(palette, ground), ids };
 }
+

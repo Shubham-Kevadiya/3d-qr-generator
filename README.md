@@ -1,44 +1,120 @@
-# Voxel QR
+# Voxel QR — 3D QR Code Generator
 
-A 3D QR code generator that runs entirely in the browser. Paste a link and pick a design from 8 categories (IT, Medical, Education, Nature, Vehicles, Business, Food, Sports — 36 voxel models) standing on a tiled plot. Tap it: the camera lifts overhead, the lighting flattens and the model's own colors resolve into a QR code you can scan straight off the screen.
+A fast, interactive 3D QR code generator that runs 100% in your browser.
 
-## Run
+Paste a link or text, choose a procedural design from 8 categories (36 voxel models) or convert your own photo into an embossed 3D relief. Tap the model: the camera arcs overhead, the lighting flattens, and the top surfaces resolve into a fully scannable QR code right off the screen.
 
-```bash
-npm install
-npm run dev      # http://localhost:5173
-npm test         # vitest, including jsQR decode checks for every object
-npm run build    # typecheck + production bundle
+---
+
+## Quick Setup & Installation
+
+### Prerequisites
+- **Node.js** (v18.x or later recommended)
+- **npm** (v9.x or later)
+
+### Installation Steps
+
+1. **Clone the repository & install dependencies**:
+   ```bash
+   git clone <repository-url>
+   cd 3d-qr-generator
+   npm install
+   ```
+
+2. **Start the development server**:
+   ```bash
+   npm run dev
+   ```
+   Open `http://localhost:5173` in your browser.
+
+3. **Run unit & verification tests**:
+   ```bash
+   npm test
+   ```
+   Runs `vitest` suite, including `jsQR` scan verification checks for all 36 voxel objects.
+
+4. **Build for production**:
+   ```bash
+   npm run build
+   ```
+   Runs TypeScript typechecking (`tsc`) and bundles production assets via Vite.
+
+---
+
+## Project Architecture
+
+```
+src/
+├── core/qr/         # Pure QR code matrix generation & SVG export
+├── voxel/           # Voxel grid, plot layout, color palette & top-voxel fit algorithm
+├── objects/         # 36 procedural voxel models across 8 categories
+│   ├── models/      # Category model definitions (business, education, food, medical, nature, sports, tech, vehicles)
+│   ├── helpers/     # Shared model construction helpers (common, kit, vehicle-parts)
+│   ├── categories.ts# Catalog category metadata
+│   ├── types.ts     # Object interfaces & variant types
+│   └── index.ts     # Main model registry & lookup helpers
+├── render/          # Custom WebGL 2 / Canvas 2D renderer, mesher, lighting & timeline
+│   └── shaders/     # Modular GLSL shaders (meshShader.ts, shadowShader.ts)
+├── photo/           # Photo mode: QArt encoding, depth estimation, relief & ZXing scan tuning
+├── ui/              # Main application UI coordinator & state management
+│   └── components/  # Modular UI components (Topbar, Dock, SaveMenu, PhotoRow, SourceDialog, InfoDialog, ScanOverlay)
+└── main.ts          # Application entry point
 ```
 
-## How it works
+---
 
-- **QR** – `qrcode-generator` with the highest error correction (`src/core/qr`).
-- **Plot** – tiles on a stone-rimmed plot carry the code; dark tiles sit a voxel lower so the pattern reads in 3D (`src/voxel/ground.ts`).
-- **Objects** – seeded procedural voxel models with color variants, decorations and emissive lights (`src/objects`).
-- **Scan view** – each column's top voxel is recolored to the dark or light tone of its own material, shape untouched, so the straight-down view is exactly the code with the object still standing (`src/voxel/fit.ts`).
-- **Renderer** – one indexed mesh of exposed faces with baked ambient occlusion and shadows; WebGL2 first, Canvas 2D fallback (`src/render`). Detail adapts to the device: 4, 3 or 2 voxels per QR module.
-- **Verified badge** – after each build the real flat-lit orthographic render is decoded with `jsqr` in the page; the badge only turns green if it matches your text.
-- **Time of day** – Dawn, Day, Dusk and Night lighting; lanterns, fairy lights, headlights and street lamp glow after dark.
+## How It Works
 
-## Embed it on a website
+- **High Error Correction QR** – Built using `qrcode-generator` with Level H error correction (`src/core/qr`), ensuring up to 30% error recovery.
+- **3D Ground Plot** – Ground tiles carry the code pattern; dark tiles sit 1 voxel lower so the QR structure creates physical 3D relief (`src/voxel/ground.ts`).
+- **Top-Voxel Color Fitting** – The top visible voxel of each 3D column is recolored into the dark or light tone of its own material family matching the QR module underneath (`src/voxel/fit.ts`). The 3D model geometry remains intact!
+- **Custom 3D Renderer** – Built from scratch without heavy frameworks. Uses an indexed WebGL 2 mesher (`src/render/WebGLRenderer.ts`) with baked ambient occlusion, directional sun shadow, and dynamic GLSL shaders (`src/render/shaders/`). Includes a 2D Canvas fallback (`src/render/CanvasRenderer.ts`).
+- **Time of Day Engine** – 4 lighting environments (**Dawn**, **Day**, **Dusk**, **Night**) featuring dynamic sky gradients and emissive voxel light sources (lanterns, headlights, streetlamps).
+- **Verified Scannable Badge** – After each render, the flat orthographic view is rendered off-screen and verified using `jsqr`. The badge only lights up green when verified.
 
-Build a model, then **Save → Copy embed code** and paste the iframe into any page (or open `/embed-demo.html`). Options and the postMessage API are in [docs/embedding.md](docs/embedding.md).
+---
 
-## Your own photo
+## Photo Mode (QArt & Monocular Depth)
 
-Choose **Your photo** and upload a picture, paste a public image link, or drop an image anywhere to turn it into an embossed 3D relief that resolves into a scannable QR code.
+Upload any picture, drop an image, or paste a public link to create an embossed 3D relief:
+- **AI Monocular Depth**: Downloads Depth Anything V2 (~27 MB ONNX model) once and caches it in browser storage. Includes a built-in algorithmic depth fallback.
+- **QArt Matrix Steering**: Steers QR data codewords so dark/light modules naturally follow image luminance targets (`src/photo/qart.ts`).
+- **Scan Strength Tuning**: Automatically selects the best balance between photo detail and scan reliability, verified via WebAssembly ZXing.
 
-- A small depth model (Depth Anything V2, about 27 MB) is downloaded once and cached in the browser; without it, a built-in relief is used so a photo always works. Set `VITE_DEPTH_MODEL_URL` to host the model yourself.
-- The code is a real, valid QR whose black-and-white pattern is steered to follow your picture (a "QArt" encoder in `src/photo/qart.ts`), so only a few modules need to be nudged. Only the center of those modules is adjusted, just enough for a camera to read.
-- **Scan strength** is tuned automatically: the most photo-like look that still decodes, including through simulated camera blur, is chosen, and the rendered result is verified with ZXing (WebAssembly, loaded only in photo mode). Override it with Photo-like, Balanced or Easy scan.
-- The code is kept as small as the link allows (the smallest version with room to steer), because bigger modules are what phones read most reliably. For the easiest scan open **Save → Full-screen scan**.
-- Image links are fetched by your browser straight from their own site. If the site does not allow cross-origin reads (CORS), the link is automatically retried through the images.weserv.nl proxy, which then sees the link (and any signature in it). Hosts that allow CORS never involve the proxy.
-- Photos never leave the browser. Photo mode needs WebGL 2. Share links do not include the photo.
+---
 
-## Features
+## Website Embedding
 
-- Tap or drag to rotate; tap the model (or press Space / R) to reveal the QR; T cycles the time of day.
-- Save a scan PNG, a model PNG or a print-ready black-and-white SVG.
-- Share link (`?q=…&o=…&v=…&t=…`) restores text, object, color and lighting.
-- Respects `prefers-reduced-motion`; text never leaves the browser.
+Build a model, click **Save → Copy embed code**, and paste the iframe snippet into any website:
+
+```html
+<iframe
+  src="https://your-domain.com/?embed=1&amp;text=https%3A%2F%2Fexample.com&amp;o=cherry-tree&amp;v=blossom&amp;t=day"
+  title="Interactive 3D QR code"
+  width="480" height="480"
+  style="border:0;width:100%;max-width:480px;aspect-ratio:1/1"
+  loading="lazy"
+  allow="fullscreen"
+></iframe>
+```
+
+For full embed options and postMessage API specifications, view [docs/embedding.md](docs/embedding.md).
+
+---
+
+## Keyboard Shortcuts & Controls
+
+| Action | Shortcut / Gesture |
+|---|---|
+| **Rotate Scene** | Drag mouse/touch or `Left` / `Right` Arrow keys |
+| **Reveal / Hide QR** | Tap 3D Model, click **Reveal QR**, or press `Space` / `R` |
+| **Cycle Time of Day** | Press `T` key |
+| **Close Dialogs / Full-screen** | Press `Esc` key |
+
+---
+
+## Documentation & Project Guidelines
+
+- **AI Guidelines & Rules**: See [`rules.md`](rules.md) for repository conventions, rendering guidelines, and engineering standards.
+- **Product Requirements & PRD**: See [`plans/requirements.md`](plans/requirements.md) for full architecture specs, catalog listings, and technical requirements.
+- **Embed Specs**: See [`docs/embedding.md`](docs/embedding.md) for iframe parameters and postMessage events.
